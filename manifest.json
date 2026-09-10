@@ -1,0 +1,40 @@
+{
+  "schema": 2,
+  "permissions": ["tools.invoke", "llm.complete"],
+  "host_capabilities": ["llm.complete"],
+  "required_executas": [
+    { "tool_id": "bundled:earth-data", "version": "latest" }
+  ],
+  "optional_executas": [],
+  "ui": {
+    "bundle": {
+      "format": "static-spa",
+      "entry": "index.html",
+      "external_origins": [
+        "https://earthquake.usgs.gov",
+        "https://eonet.gsfc.nasa.gov",
+        "https://services.swpc.noaa.gov",
+        "https://www.gdacs.org"
+      ]
+    },
+    "views": [
+      {
+        "name": "main",
+        "title": "Earth Anomaly Observatory",
+        "default": true,
+        "entry": "index.html",
+        "default_size": { "w": 1200, "h": 800 },
+        "min_size": { "w": 360, "h": 540 },
+        "max_size": { "w": 1920, "h": 1200 },
+        "resizable": true,
+        "movable": true,
+        "single_instance": true
+      }
+    ],
+    "host_api": {
+      "tools": ["required:bundled:earth-data"],
+      "llm": ["complete"],
+      "window": ["ready"]
+    }
+  }
+}

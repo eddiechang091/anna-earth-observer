@@ -1,0 +1,2 @@
+[console_scripts]
+tool-dev-earth-data = main:main

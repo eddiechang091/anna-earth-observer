@@ -1,0 +1,8 @@
+{
+  "slug": "earth-anomaly-observatory",
+  "name": "Earth Anomaly Observatory",
+  "version": "1.0.0",
+  "bundled_executas": {
+    "earth-data": { "path": "./executas/earth-data" }
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "slug": "earth-data",
+  "name": "Earth Data",
+  "version": "1.0.0",
+  "executa_type": "tool",
+  "tool_id": "tool-dev-earth-data",
+  "type": "python",
+  "distribution": {
+    "active": "local",
+    "profiles": {
+      "local": {
+        "type": "local",
+        "package_name": "tool-dev-earth-data",
+        "executable_name": "tool-dev-earth-data",
+        "supports_protocol": true
+      },
+      "binary": {
+        "type": "binary",
+        "package_name": "tool-dev-earth-data",
+        "executable_name": "tool-dev-earth-data",
+        "supports_protocol": true,
+        "binary_artifacts": {
+          "darwin-arm64":   { "path": "dist/tool-dev-earth-data-1.0.0-darwin-arm64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "darwin-x86_64":  { "path": "dist/tool-dev-earth-data-1.0.0-darwin-x86_64.tar.gz",  "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "linux-x86_64":   { "path": "dist/tool-dev-earth-data-1.0.0-linux-x86_64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "windows-x86_64": { "path": "dist/tool-dev-earth-data-1.0.0-windows-x86_64.zip",    "entrypoint": "bin/tool-dev-earth-data.exe", "format": "zip" }
+        }
+      }
+    }
+  }
+}

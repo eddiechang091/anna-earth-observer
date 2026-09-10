@@ -1,0 +1,15 @@
+[project]
+name = "tool-dev-earth-data"
+version = "1.0.0"
+requires-python = ">=3.11"
+
+[project.scripts]
+tool-dev-earth-data = "main:main"
+
+[tool.setuptools]
+# main.py is a top-level module, not inside a package directory.
+py-modules = ["main"]
+
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"

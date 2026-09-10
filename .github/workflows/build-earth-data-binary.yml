@@ -1,0 +1,103 @@
+name: Build Earth Data Executa Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build (e.g., 1.0.0)'
+        required: true
+        default: '1.0.0'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-latest
+            runner: macos-13-arm64
+            platform: darwin-arm64
+            format: tar.gz
+          - os: macos-13
+            runner: macos-13
+            platform: darwin-x86_64
+            format: tar.gz
+          - os: ubuntu-latest
+            runner: ubuntu-latest
+            platform: linux-x86_64
+            format: tar.gz
+          - os: windows-latest
+            runner: windows-latest
+            platform: windows-x86_64
+            format: zip
+
+    runs-on: ${{ matrix.os }}
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyInstaller
+      
+      - name: Build binary
+        run: |
+          cd executas/earth-data
+          pyinstaller \
+            --onefile \
+            --name tool-dev-earth-data \
+            --dist ../dist-${{ matrix.platform }} \
+            main.py
+        shell: bash
+      
+      - name: Create artifact archive (Unix)
+        if: matrix.format == 'tar.gz'
+        run: |
+          cd executas/dist-${{ matrix.platform }}
+          tar -czf ../tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.tar.gz bin/
+          ls -lh ../tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.tar.gz
+        shell: bash
+      
+      - name: Create artifact archive (Windows)
+        if: matrix.format == 'zip'
+        run: |
+          cd executas\dist-${{ matrix.platform }}
+          7z a ..\tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.zip bin\
+          dir ..\tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.zip
+        shell: pwsh
+      
+      - name: Generate SHA256 checksum
+        run: |
+          cd executas
+          $file = "tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}"
+          if ("${{ matrix.format }}" -eq "tar.gz") {
+            sha256sum "$file" > "$file.sha256"
+          } else {
+            certutil -hashfile "$file" SHA256 | findstr /V "SHA256" | findstr /V "^$" > "$file.sha256"
+          }
+        shell: pwsh
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: earth-data-${{ matrix.platform }}
+          path: |
+            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}
+            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}.sha256
+          retention-days: 30
+      
+      - name: Create Release
+        if: github.event_name == 'workflow_dispatch'
+        uses: ncipollo/release-action@v1
+        with:
+          tag: v${{ inputs.version }}
+          artifacts: |
+            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}
+            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}.sha256
+          allowUpdates: true
+          draft: false
