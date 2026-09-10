@@ -10,6 +10,8 @@ on:
 
 jobs:
   build:
+    permissions:
+      contents: write
     strategy:
       matrix:
         include:
@@ -59,7 +61,7 @@ jobs:
         if: matrix.format == 'tar.gz'
         run: |
           cd executas/dist-${{ matrix.platform }}
-          tar -czf ../tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.tar.gz bin/
+          tar -czf ../tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.tar.gz tool-dev-earth-data
           ls -lh ../tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.tar.gz
         shell: bash
       
@@ -67,7 +69,7 @@ jobs:
         if: matrix.format == 'zip'
         run: |
           cd executas\dist-${{ matrix.platform }}
-          7z a ..\tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.zip bin\
+          7z a ..\tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.zip tool-dev-earth-data.exe
           dir ..\tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.zip
         shell: pwsh
       
@@ -83,7 +85,7 @@ jobs:
         shell: pwsh
       
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: earth-data-${{ matrix.platform }}
           path: |
