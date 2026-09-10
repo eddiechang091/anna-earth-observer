@@ -17,8 +17,8 @@ jobs:
             runner: macos-13-arm64
             platform: darwin-arm64
             format: tar.gz
-          - os: macos-13
-            runner: macos-13
+          - os: macos-latest
+            runner: macos-latest
             platform: darwin-x86_64
             format: tar.gz
           - os: ubuntu-latest
