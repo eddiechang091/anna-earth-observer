@@ -54,7 +54,7 @@ The UI supports English, French (Canadian), and Spanish with live language switc
 
 ## Project Structure
 
-`
+```
 anna-earth-observer/
 +-- index.html                  # HTML entry point
 +-- package.json
@@ -84,7 +84,7 @@ anna-earth-observer/
     +-- pages/                  # Page-level components
     +-- services/               # API / data-access layer
     +-- types/                  # Shared TypeScript types
-`
+```
 
 ---
 
@@ -93,22 +93,22 @@ anna-earth-observer/
 - **Node.js** >= 20
 - **pnpm** >= 9
 
-`ash
+```bash
 node -v   # v20.x.x or later
 pnpm -v   # 9.x.x or later
-`
+```
 
 To install pnpm:
 
-`ash
+```bash
 npm install -g pnpm
-`
+```
 
 ---
 
 ## Getting Started
 
-`ash
+```bash
 # 1. Clone the repository
 git clone <repository-url>
 cd anna-earth-observer
@@ -121,7 +121,7 @@ cp .env.example .env.local
 
 # 4. Start the development server
 pnpm dev
-`
+```
 
 The app will be available at http://localhost:5173.
 
