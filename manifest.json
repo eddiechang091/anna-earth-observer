@@ -40,7 +40,12 @@
     "host_api": {
       "tools": ["required:bundled:earth-data"],
       "llm": ["complete"],
-      "window": ["ready"]
+      "window": ["ready"],
+      "agent": {
+        "session": {
+          "auto": true
+        }
+      }
     }
   }
 }
