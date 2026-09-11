@@ -1,7 +1,7 @@
 {
   "slug": "earth-anomaly-observatory",
   "name": "Earth Anomaly Observatory",
-  "version": "1.0.4",
+  "version": "1.0.9",
   "category": "data",
   "tagline": "Monitor global earthquakes, storms, floods, wildfires, volcanoes, ice, and space weather in one live dashboard.",
   "description": "Earth Anomaly Observatory is a live Earth-systems monitoring app that unifies signals from authoritative public sources into a single operational dashboard. It highlights significant geophysical and climate-related events across earthquakes, storms, floods, wildfires, volcanoes, ice conditions, and space weather, then summarizes overall global activity with an anomaly index and AI-assisted situation assessment.",
