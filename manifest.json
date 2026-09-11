@@ -14,7 +14,13 @@
         "https://earthquake.usgs.gov",
         "https://eonet.gsfc.nasa.gov",
         "https://services.swpc.noaa.gov",
-        "https://www.gdacs.org"
+        "https://www.gdacs.org",
+        "https://a.tile.openstreetmap.org",
+        "https://b.tile.openstreetmap.org",
+        "https://c.tile.openstreetmap.org",
+        "https://cdnjs.cloudflare.com",
+        "https://resource-static.bj.bcebos.com",
+        "https://d8j0ntlcm91z4.cloudfront.net"
       ]
     },
     "views": [
