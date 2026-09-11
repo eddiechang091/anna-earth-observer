@@ -43,7 +43,8 @@
       "window": ["ready"],
       "agent": {
         "session": {
-          "auto": true
+          "auto": true,
+          "fixed": {}
         }
       }
     }
