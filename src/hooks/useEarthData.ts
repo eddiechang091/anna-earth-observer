@@ -199,11 +199,12 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
     temperature_extremes: 'wildfire',
   };
 
+  const fetchOpts: RequestInit = { mode: 'cors', credentials: 'omit' };
   const [usgsRes, eonetRes, swpcRes, gdacsRes] = await Promise.allSettled([
-    fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson'),
-    fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50&days=14'),
-    fetch('https://services.swpc.noaa.gov/products/alerts.json'),
-    fetch('https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP'),
+    fetch('https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.geojson', fetchOpts),
+    fetch('https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50&days=14', fetchOpts),
+    fetch('https://services.swpc.noaa.gov/products/alerts.json', fetchOpts),
+    fetch('https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP', fetchOpts),
   ]);
 
   const usgsEvents:    CanonicalEvent[] = [];
@@ -254,7 +255,12 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
         ],
       });
     }
-  } else { errors.push('USGS unavailable'); }
+  } else {
+    const reason = usgsRes.status === 'rejected' ? `error: ${usgsRes.reason}` : 
+                   usgsRes.value.status ? `HTTP ${usgsRes.value.status}` : 'connection failed';
+    errors.push(`USGS unavailable (${reason})`);
+    console.error('[USGS Fetch]', reason);
+  }
 
   // ── NASA EONET ────────────────────────────────────────────────────────────
   if (eonetRes.status === 'fulfilled' && eonetRes.value.ok) {
@@ -290,7 +296,12 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
         avatars: [{ text: avLabels[Math.abs(hash) % avLabels.length], bgClass: avClasses[Math.abs(hash) % avClasses.length] }],
       });
     }
-  } else { errors.push('NASA EONET unavailable'); }
+  } else {
+    const reason = eonetRes.status === 'rejected' ? `error: ${eonetRes.reason}` :
+                   eonetRes.value.status ? `HTTP ${eonetRes.value.status}` : 'connection failed';
+    errors.push(`NASA EONET unavailable (${reason})`);
+    console.error('[EONET Fetch]', reason);
+  }
 
   // ── NOAA SWPC (grouped into episodes) ─────────────────────────────────────
   if (swpcRes.status === 'fulfilled' && swpcRes.value.ok) {
@@ -326,7 +337,12 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
         confidence: Math.min(99, confidence), extra: { scale },
       });
     }
-  } else { errors.push('NOAA SWPC unavailable'); }
+  } else {
+    const reason = swpcRes.status === 'rejected' ? `error: ${swpcRes.reason}` :
+                   swpcRes.value.status ? `HTTP ${swpcRes.value.status}` : 'connection failed';
+    errors.push(`NOAA SWPC unavailable (${reason})`);
+    console.error('[SWPC Fetch]', reason);
+  }
 
   // ── GDACS: Floods, Volcanoes, Tsunamis (optional – fails gracefully on CORS) ─
   const gdacsCanonical: CanonicalEvent[] = [];
@@ -413,6 +429,31 @@ export interface UseEarthDataReturn {
   refetch(): void;
 }
 
+type ToolInvokePayload = {
+  success: boolean;
+  data?: CanonicalDataResult;
+  error?: string;
+};
+
+function normalizeToolInvokeResponse(raw: unknown): ToolInvokePayload | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  const wrapped = raw as { ok?: boolean; result?: unknown; error?: { message?: string } };
+  if ('result' in wrapped && wrapped.result && typeof wrapped.result === 'object') {
+    return wrapped.result as ToolInvokePayload;
+  }
+
+  if ('success' in (raw as Record<string, unknown>)) {
+    return raw as ToolInvokePayload;
+  }
+
+  if (wrapped.ok === false) {
+    return { success: false, error: wrapped.error?.message ?? 'Tool invoke failed' };
+  }
+
+  return null;
+}
+
 export function useEarthData(): UseEarthDataReturn {
   const [data, setData]         = useState<CanonicalDataResult>(STATIC_CANONICAL_DATA);
   const [loading, setLoading]   = useState(true);
@@ -426,21 +467,42 @@ export function useEarthData(): UseEarthDataReturn {
     try {
       const runtime = await getAnnaRuntime();
       if (runtime) {
-        const toolId = getToolId('earth-data', 'tool-dev-earth-data');
-        const resp = await runtime.tools.invoke(toolId, 'anomalies.fetch', {}) as {
-          success: boolean; data?: CanonicalDataResult; error?: string;
-        };
-        if (resp.success && resp.data && version === versionRef.current) {
-          setData(resp.data); setSource('anna'); setLoading(false); return;
+        console.log('[EarthData] Anna runtime available, attempting tool invoke...');
+        // Try both the resolved tool ID and the bundled handle
+        const resolvedId = getToolId('earth-data', 'tool-dev-earth-data');
+        const bundledHandle = 'bundled:earth-data';
+        const toolId = resolvedId !== 'tool-dev-earth-data' ? resolvedId : bundledHandle;
+        console.log('[EarthData] Using tool ID:', toolId, '(resolved:', resolvedId, ')');
+        console.log('[EarthData] Invoking anomalies.fetch with empty args...');
+        try {
+          const rawResp = await runtime.tools.invoke({
+            tool_id: toolId,
+            method: 'anomalies.fetch',
+            args: {},
+          });
+          const resp = normalizeToolInvokeResponse(rawResp);
+          console.log('[EarthData] Tool invoke response:', resp);
+          if (resp?.success && resp.data && version === versionRef.current) {
+            console.log('[EarthData] Tool invoke succeeded, using Anna data source');
+            setData(resp.data); setSource('anna'); setLoading(false); return;
+          }
+          console.log('[EarthData] Tool invoke returned:', resp?.error ?? 'no data');
+        } catch (invokeErr) {
+          console.error('[EarthData] Tool invoke threw error:', invokeErr);
+          throw invokeErr;
         }
+      } else {
+        console.log('[EarthData] Anna runtime unavailable, falling back to direct HTTP');
       }
       const result = await fetchDirect();
       if (version === versionRef.current) {
+        console.log('[EarthData] Direct fetch completed, event count:', result.canonicalEvents.length);
         setData(result);
         setSource(result.canonicalEvents.length > 0 ? 'direct' : 'offline');
       }
     } catch (err) {
       if (version === versionRef.current) {
+        console.error('[EarthData] Fetch failed:', err);
         setError(err instanceof Error ? err.message : 'Fetch failed');
         setSource('offline');
       }

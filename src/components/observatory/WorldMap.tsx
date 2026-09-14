@@ -52,10 +52,10 @@ export const WorldMap: React.FC<WorldMapProps> = ({
       doubleClickZoom: true,
     });
 
-    // Add OpenStreetMap tile layer
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
+    // USGS OpenTopoMap tiles — completely free, government data, no API key needed
+    L.tileLayer('https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}', {
+      attribution: '&copy; <a href="https://www.usgs.gov/">USGS</a>',
+      maxZoom: 16,
     }).addTo(map);
 
     mapRef.current = map;
