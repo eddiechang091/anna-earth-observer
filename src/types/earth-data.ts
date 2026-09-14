@@ -140,13 +140,26 @@ export interface AITopDevelopment {
   confidence: 'high' | 'moderate' | 'low';
 }
 
+export type AITone = 'playful' | 'hilarious' | 'kids' | 'scientific' | 'mentor';
+
+export interface AIAssessmentSection {
+  id: string;
+  label: string;
+  content: string;
+  parseAs: 'text' | 'bullets';
+}
+
 export interface AIAssessment {
   generatedAt: string;
+  displayMode?: 'structured' | 'raw';
+  /** Full raw text from Anna LLM — always populated */
+  rawText: string;
   executiveSummary: string;
   topDevelopments: AITopDevelopment[];
   crossDomainObservations: string[];
   dataQualityWarnings: string[];
   keyUncertainties: string[];
   analystPriorities: string[];
+  sections?: AIAssessmentSection[];
 }
 
