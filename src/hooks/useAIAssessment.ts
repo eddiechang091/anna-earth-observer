@@ -1,192 +1,255 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getAnnaRuntime } from '@/anna-runtime';
-import type { CanonicalDataResult, AIAssessment } from '@/types/earth-data';
+import type { CanonicalDataResult, AIAssessment, AITone } from '@/types/earth-data';
+import type { Lang } from '@/i18n/messages';
+import { messages } from '@/i18n/messages';
 
 // ─── Prompt ───────────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are a scientific analyst assistant for an environmental and space-weather monitoring system.
+type TonePrompt = { system: string; format: string };
 
-You receive pre-calculated metrics from a statistical engine. Your role is to interpret the evidence and identify the most important current developments.
+function getTonePrompts(lang: Lang): Record<AITone, TonePrompt> {
+  const langMessages = messages[lang];
+  const tones = (langMessages?.dashboard?.tones as Record<AITone, { system: string; format: string }>) || {};
+  
+  return {
+    playful: {
+      system: tones.playful?.system || 'You are enthusiastic and positive about Earth news.',
+      format: tones.playful?.format || 'Write natural flowing text with key points.',
+    },
+    hilarious: {
+      system: tones.hilarious?.system || 'You are a sarcastic, dark-humor planet correspondent.',
+      format: tones.hilarious?.format || 'Layout should be visually unusual and comedic:',
+    },
+    kids: {
+      system: tones.kids?.system || 'You are a warm, friendly storyteller telling Earth news like a bedtime story to children.',
+      format: tones.kids?.format || 'Just tell a natural, warm story.',
+    },
+    scientific: {
+      system: tones.scientific?.system || 'You are a rigorous scientific analyst for an Earth and space-weather monitoring system.',
+      format: tones.scientific?.format || 'Use formal scientific sections:',
+    },
+    mentor: {
+      system: tones.mentor?.system || 'You are a trusted friend and mentor sharing Earth insights.',
+      format: tones.mentor?.format || 'Write SHORT paragraphs naturally.',
+    },
+  };
+}
 
-STRICT RULES:
-- DO NOT recalculate or reinterpret the Global Anomaly Index score.
-- DO NOT assert causal relationships between separate domains (e.g. solar activity causing earthquakes).
-- DO NOT convert NOAA G/R/S scale values, earthquake magnitudes, or any measured quantity into a probability of disaster.
-- DO NOT treat temporal correlation as causation.
-- DO NOT invent observations not present in the data.
-- DO NOT use wording like "72% risk" or "85% chance of disaster" unless a calibrated probabilistic model is explicitly provided.
-- Write whyImportant in plain, accessible language that a general audience can understand — avoid specialist jargon.
+// Define sections for each assessment request
+type SectionRequest = {
+  id: string;
+  label: string;
+  prompt: string;
+  maxSentences: number;
+  parseAs: 'text' | 'bullets';
+};
 
-TERMINOLOGY — always distinguish clearly:
-- OBSERVED: A phenomenon has been directly measured or reported by an authoritative source.
-- FORECAST: A model or expert prediction of future activity.
-- WATCH: Conditions are favorable for the phenomenon to develop.
-- WARNING: The phenomenon is occurring or is imminent.
-- ALERT: A threshold has been crossed; immediate attention required.
-- HISTORICAL COMPARISON: Current reading vs. baseline; state the comparison explicitly ("above the 90-day baseline by X").
+function buildSectionRequests(tone: AITone, lang: Lang, compactData: string): SectionRequest[] {
+  const tonePrompts = getTonePrompts(lang);
+  const systemPrompt = tonePrompts[tone].system;
 
-SCIENCE RULES:
-- Preserve source units exactly (km/h, m, Mw, km², pfu, nT, hectares).
-- Use NOAA G/R/S scale terminology as published.
-- Qualify any cross-domain observations as correlational only.
-- State explicitly when evidence is insufficient or data coverage is low.
-
-You may note:
-- "Several domains are simultaneously showing elevated activity." (correlational observation — acceptable)
-- "The earthquake rate is above the historical baseline." (statistical observation — acceptable)
-- "This pattern warrants monitoring but does not establish causation." (analytical caveat — acceptable)
-
-You must not say:
-- "The solar storm caused the earthquakes." (causal claim without scientific evidence)
-- "Wildfires and hurricanes indicate a global climate anomaly." (over-interpretation of sparse data)
-
-RESPONSE: Return a single valid JSON object with no markdown fences or code blocks, matching this schema exactly:
-{
-  "executiveSummary": "<2–4 sentence factual summary of current conditions based solely on provided data>",
-  "topDevelopments": [
+  return [
     {
-      "rank": 1,
-      "eventId": "<source event id from the data>",
-      "title": "<concise descriptive title>",
-      "domain": "<earthquake|wildfire|storm|flood|volcano|ice|space_weather>",
-      "importance": "<critical|high|moderate|low>",
-      "whyImportant": "<1–3 sentences citing magnitude, scale, or baseline comparison with units>",
-      "evidence": [
-        { "source": "<USGS|NASA EONET|NOAA SWPC|etc>", "sourceId": "<id from data>", "observation": "<exact reported observation with units>" }
-      ],
-      "trend": "<increasing|stable|decreasing|uncertain>",
-      "confidence": "<high|moderate|low>"
-    }
-  ],
-  "crossDomainObservations": ["<correlational observation only — no causality claims>"],
-  "dataQualityWarnings": ["<missing data, limited coverage, curation notes, or feed limitations>"],
-  "keyUncertainties": ["<explicit list of what is unknown, unverified, or ambiguous in this dataset>"],
-  "analystPriorities": ["<recommended attention items based solely on the provided evidence>"]
-}`;
+      id: 'situation',
+      label: 'What\'s Happening',
+      prompt: `${systemPrompt}\n\nTask: Summarize the current situation in exactly 2-3 sentences. Max 3 sentences.\n\nData:\n${compactData}`,
+      maxSentences: 3,
+      parseAs: 'text',
+    },
+    {
+      id: 'observations',
+      label: 'Key Observations',
+      prompt: `${systemPrompt}\n\nTask: List 3-4 key observations about current Earth activity. Each bullet point should be 1-2 sentences max. Format as bullet list.\n\nData:\n${compactData}`,
+      maxSentences: 2,
+      parseAs: 'bullets',
+    },
+    {
+      id: 'connections',
+      label: 'How It All Connects',
+      prompt: `${systemPrompt}\n\nTask: Explain how different Earth phenomena are connected or related. Max 3 sentences.\n\nData:\n${compactData}`,
+      maxSentences: 3,
+      parseAs: 'text',
+    },
+    {
+      id: 'watch',
+      label: 'What to Watch For',
+      prompt: `${systemPrompt}\n\nTask: Identify 3-4 things worth monitoring. Each bullet point should be 1-2 sentences max. Format as bullet list.\n\nData:\n${compactData}`,
+      maxSentences: 2,
+      parseAs: 'bullets',
+    },
+  ];
+}
 
 // ─── Data serialisation ───────────────────────────────────────────────────────
 
-function buildUserMessage(data: CanonicalDataResult): string {
-  // Send compact representation — top 20 events by priority then magnitude
-  const priorityOrder = { high: 0, medium: 1, low: 2 };
-  const topEvents = [...data.canonicalEvents]
-    .sort((a, b) => {
-      const pd = priorityOrder[a.priority] - priorityOrder[b.priority];
-      return pd !== 0 ? pd : b.magnitude - a.magnitude;
-    })
-    .slice(0, 20)
+function buildCompactFallbackMessage(data: CanonicalDataResult): string {
+  const top = [...data.canonicalEvents]
+    .sort((a, b) => b.magnitude - a.magnitude)
+    .slice(0, 6)
     .map(e => ({
-      id: e.id,
-      name: e.name,
       region: e.region,
       domain: e.domain,
-      type: e.type,
-      priority: e.priority,
-      magnitude: e.magnitude,
-      source: e.source,
-      sourceCount: e.sourceCount,
-      detectedAt: e.detectedAt,
-      ageHours: Math.round(e.ageHours),
-      ...(e.depth !== undefined ? { depth_km: e.depth } : {}),
-      ...(e.extra?.scale ? { scale: e.extra.scale } : {}),
+      mag: e.magnitude,
+      status: e.status,
+      time: e.detectedAt,
     }));
 
-  const episodes = data.spaceWeatherEpisodes.map(ep => ({
-    id: ep.id,
-    phenomenon: ep.phenomenon,
-    label: ep.phenomenonLabel,
-    scale: ep.scale ?? null,
-    severity: ep.severity,
-    status: ep.status,
-    observedOrForecast: ep.observedOrForecast,
-    firstObserved: ep.firstObserved,
-    lastUpdated: ep.lastUpdated,
-    bulletinCount: ep.sourceMessages.length,
-    ageText: ep.ageText,
-  }));
-
-  const domainSummary = data.domainScores.map(d => ({
+  const domains = data.domainScores.map(d => ({
     domain: d.domain,
-    label: d.label,
     score: d.score,
     trend: d.trend,
-    mainDriver: d.mainDriver,
-    eventCount: d.eventCount,
-    baselineAvailable: d.baselineAvailable,
-    ...(d.baselineAvailable ? { dataCoverage: Math.round(d.dataCoverage * 100) + '%' } : {}),
-  }));
-
-  const gai = {
-    score: data.globalAnomalyIndex.score,
-    available: data.globalAnomalyIndex.available,
-    baselineStatus: data.globalAnomalyIndex.baselineStatus,
-    dataCoverage: Math.round(data.globalAnomalyIndex.dataCoverage * 100) + '%',
-    confidence: data.globalAnomalyIndex.confidence,
-    baselineNote: data.globalAnomalyIndex.baselineNote,
-  };
-
-  const dataQuality = data.dataHealth.map(h => ({
-    source: h.source,
-    label: h.label,
-    online: h.online,
-    records: h.recordCount,
-    ...(h.dedupedCount !== undefined && h.dedupedCount > 0 ? { merged: h.dedupedCount } : {}),
-    ...(h.episodeCount !== undefined ? { episodes: h.episodeCount } : {}),
-    errors: h.errors,
+    count: d.eventCount,
   }));
 
   return JSON.stringify({
     fetchedAt: data.fetchedAt,
-    globalAnomalyIndex: gai,
-    domainScores: domainSummary,
-    topEvents,
-    spaceWeatherEpisodes: episodes,
-    dataQuality,
-    totalCanonicalEvents: data.canonicalEvents.length,
-  }, null, 2);
+    counts: {
+      events: data.canonicalEvents.length,
+      spaceEpisodes: data.spaceWeatherEpisodes.length,
+      onlineSources: data.dataHealth.filter(h => h.online).length,
+    },
+    top,
+    domains,
+  });
+}
+
+async function requestSectionFromLLM(anna: unknown, request: SectionRequest): Promise<string> {
+  const runtime = anna as {
+    llm?: {
+      complete?: (args: { 
+        messages: Array<{ role: string; content: { type: string; text: string } }>;
+        maxTokens?: number;
+        temperature?: number;
+      }) => Promise<unknown>;
+    };
+  };
+
+  if (!runtime.llm?.complete) return '';
+
+  try {
+    const response = await runtime.llm.complete({
+      messages: [
+        {
+          role: 'user',
+          content: { type: 'text', text: request.prompt },
+        },
+      ],
+      maxTokens: 150,
+      temperature: 0.3,
+    });
+
+    return extractTextFromResponse(response).trim();
+  } catch (err) {
+    console.warn(`[AI Assessment] Failed to fetch section ${request.id}:`, err);
+    return '';
+  }
+}
+
+type SectionResponse = {
+  id: string;
+  label: string;
+  content: string;
+  parseAs: 'text' | 'bullets';
+};
+
+async function generateMultiSectionAssessment(anna: unknown, tone: AITone, lang: Lang, compactData: string): Promise<SectionResponse[]> {
+  const requests = buildSectionRequests(tone, lang, compactData);
+  
+  // Send all requests concurrently
+  const responses = await Promise.all(
+    requests.map(async (req) => {
+      const content = await requestSectionFromLLM(anna, req);
+      return {
+        id: req.id,
+        label: req.label,
+        content: content || `(Unable to generate ${req.label.toLowerCase()})`,
+        parseAs: req.parseAs,
+      };
+    })
+  );
+
+  return responses;
 }
 
 // ─── JSON parse with fence stripping ─────────────────────────────────────────
 
-function parseAssessment(raw: string): AIAssessment | null {
-  try {
-    // Strip markdown fences if the model wrapped the output
-    const stripped = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
-    const parsed = JSON.parse(stripped);
-    if (
-      typeof parsed.executiveSummary !== 'string' ||
-      !Array.isArray(parsed.topDevelopments)
-    ) return null;
-    return {
-      generatedAt: new Date().toISOString(),
-      executiveSummary: String(parsed.executiveSummary),
-      topDevelopments: (parsed.topDevelopments ?? []).map((d: Record<string, unknown>, i: number) => ({
-        rank: Number(d.rank ?? i + 1),
-        eventId: String(d.eventId ?? ''),
-        title: String(d.title ?? ''),
-        domain: String(d.domain ?? 'unknown'),
-        importance: (['critical', 'high', 'moderate', 'low'].includes(String(d.importance)) ? d.importance : 'moderate') as AIAssessment['topDevelopments'][0]['importance'],
-        whyImportant: String(d.whyImportant ?? ''),
-        evidence: Array.isArray(d.evidence) ? d.evidence.map((ev: Record<string, unknown>) => ({
-          source: String(ev.source ?? ''),
-          sourceId: String(ev.sourceId ?? ''),
-          observation: String(ev.observation ?? ''),
-        })) : [],
-        trend: (['increasing', 'stable', 'decreasing', 'uncertain'].includes(String(d.trend)) ? d.trend : 'uncertain') as AIAssessment['topDevelopments'][0]['trend'],
-        confidence: (['high', 'moderate', 'low'].includes(String(d.confidence)) ? d.confidence : 'low') as AIAssessment['topDevelopments'][0]['confidence'],
-      })),
-      crossDomainObservations: Array.isArray(parsed.crossDomainObservations)
-        ? parsed.crossDomainObservations.map(String) : [],
-      dataQualityWarnings: Array.isArray(parsed.dataQualityWarnings)
-        ? parsed.dataQualityWarnings.map(String) : [],
-      keyUncertainties: Array.isArray(parsed.keyUncertainties)
-        ? parsed.keyUncertainties.map(String) : [],
-      analystPriorities: Array.isArray(parsed.analystPriorities)
-        ? parsed.analystPriorities.map(String) : [],
-    };
-  } catch {
-    return null;
+/** Walk all known Anna SDK response shapes to extract text content. */
+function extractTextFromResponse(raw: unknown): string {
+  if (!raw) return '';
+
+  // Primitive string
+  if (typeof raw === 'string') return raw;
+
+  if (typeof raw !== 'object') return '';
+
+  const r = raw as Record<string, unknown>;
+
+  // Unwrap RPC envelope: { ok, result }
+  if ('result' in r && r.result && typeof r.result === 'object') {
+    return extractTextFromResponse(r.result);
   }
+
+  // Direct content field
+  if ('content' in r) {
+    const c = r.content;
+    if (typeof c === 'string') return c;
+    if (c && typeof c === 'object') {
+      const co = c as Record<string, unknown>;
+      if (typeof co.text === 'string') return co.text;
+      if (Array.isArray(co)) {
+        // content may be an array of blocks
+        return (co as Record<string, unknown>[])
+          .map(block => (typeof block.text === 'string' ? block.text : ''))
+          .join('\n');
+      }
+    }
+  }
+
+  // Message field (some SDK versions)
+  if (typeof r.message === 'string') return r.message;
+  if (typeof r.text === 'string') return r.text;
+
+  return '';
+}
+
+function buildProseAssessment(sections: SectionResponse[]): AIAssessment {
+  const rawText = sections.map(s => `${s.label}:\n${s.content}`).join('\n\n');
+  
+  // Extract content from sections
+  const situation = sections.find(s => s.id === 'situation')?.content || '';
+  const observationContent = sections.find(s => s.id === 'observations')?.content || '';
+  const connectionsContent = sections.find(s => s.id === 'connections')?.content || '';
+  const watchContent = sections.find(s => s.id === 'watch')?.content || '';
+
+  function parseBullets(raw: string): string[] {
+    return raw.split('\n')
+      .map(l => l.replace(/^[-•*]\s*/, '').trim())
+      .filter(l => l.length > 0);
+  }
+
+  return {
+    generatedAt: new Date().toISOString(),
+    displayMode: 'structured',
+    rawText: rawText,
+    executiveSummary: situation,
+    topDevelopments: parseBullets(observationContent).map((line, i) => ({
+      rank: i + 1,
+      eventId: '',
+      title: line.split(' — ')[0].trim(),
+      domain: 'earthquake',
+      importance: 'moderate' as const,
+      whyImportant: line.split(' — ').slice(1).join(' — ').trim() || line,
+      evidence: [],
+      trend: 'uncertain' as const,
+      confidence: 'moderate' as const,
+    })),
+    crossDomainObservations: connectionsContent ? [connectionsContent] : [],
+    dataQualityWarnings: [],
+    keyUncertainties: [],
+    analystPriorities: parseBullets(watchContent),
+    sections: sections,
+  };
 }
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
@@ -199,12 +262,13 @@ export interface UseAIAssessmentReturn {
   generate: () => Promise<void>;
 }
 
-export function useAIAssessment(data: CanonicalDataResult | null): UseAIAssessmentReturn {
+export function useAIAssessment(data: CanonicalDataResult | null, tone: AITone = 'scientific', lang: Lang = 'en'): UseAIAssessmentReturn {
   const [assessment, setAssessment] = useState<AIAssessment | null>(null);
   const [loading, setLoading]       = useState(false);
   const [error, setError]           = useState<string | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const lastFetchRef = useRef<string>('');
+  const lastToneRef = useRef<AITone>(tone);
 
   const generate = useCallback(async () => {
     if (!data || data.canonicalEvents.length === 0) return;
@@ -217,28 +281,26 @@ export function useAIAssessment(data: CanonicalDataResult | null): UseAIAssessme
         setLoading(false);
         return;
       }
-      const userMessage = buildUserMessage(data);
-      const response = await anna.llm.complete({
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: `Current sensor data:\n\n${userMessage}` },
-        ],
-        max_tokens: 2000,
-        temperature: 0.3,
-      });
-      const parsed = parseAssessment(response.content);
-      if (!parsed) {
-        setError('Assessment could not be parsed. Raw response may be malformed.');
-      } else {
-        setAssessment(parsed);
-        setError(null);
+
+      const compactData = buildCompactFallbackMessage(data);
+      
+      // Use new multi-section approach: send targeted prompts in parallel
+      const sections = await generateMultiSectionAssessment(anna, tone, lang, compactData);
+      
+      if (sections.length === 0 || sections.every(s => s.content.includes('Unable to generate'))) {
+        setAssessment(null);
+        setError('Anna returned empty responses from all sections.');
+        return;
       }
+
+      setAssessment(buildProseAssessment(sections));
+      setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Assessment generation failed.');
     } finally {
       setLoading(false);
     }
-  }, [data]);
+  }, [data, tone, lang]);
 
   // Auto-generate whenever new data arrives (new fetchedAt)
   useEffect(() => {
@@ -248,6 +310,23 @@ export function useAIAssessment(data: CanonicalDataResult | null): UseAIAssessme
     lastFetchRef.current = data.fetchedAt;
     generate();
   }, [data?.fetchedAt, generate]);
+
+  // Regenerate when tone changes even if fetchedAt is unchanged.
+  useEffect(() => {
+    if (!data) return;
+    if (lastToneRef.current === tone) return;
+    lastToneRef.current = tone;
+    generate();
+  }, [tone, data, generate]);
+
+  // Regenerate when language changes to get response in new language
+  const lastLangRef = useRef<Lang>(lang);
+  useEffect(() => {
+    if (!data) return;
+    if (lastLangRef.current === lang) return;
+    lastLangRef.current = lang;
+    generate();
+  }, [lang, data, generate]);
 
   return { assessment, loading, error, unavailable, generate };
 }

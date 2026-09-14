@@ -239,7 +239,14 @@ export const AISituationAssessment: React.FC<AISituationAssessmentProps> = ({
             background: 'rgba(168,85,247,0.07)', borderLeft: '3px solid #a855f7',
           }}>
             <p style={{ margin: 0, fontSize: '11px', lineHeight: 1.6, color: 'var(--text-secondary)' }}>
-              {assessment.executiveSummary}
+              {assessment.displayMode === 'raw' && (
+                <span style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)', marginBottom: '6px' }}>
+                  Anna raw response
+                </span>
+              )}
+              <span style={{ whiteSpace: assessment.displayMode === 'raw' ? 'pre-wrap' : 'normal' }}>
+                {assessment.executiveSummary}
+              </span>
             </p>
           </div>
 
