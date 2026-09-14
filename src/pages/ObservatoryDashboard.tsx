@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useContext } from 'react';
 import { useScrollParallax } from '@/hooks/useScrollParallax';
 import { useEarthData } from '@/hooks/useEarthData';
 import { useAIAssessment } from '@/hooks/useAIAssessment';
@@ -11,10 +11,14 @@ import { EventFeed } from '@/components/observatory/EventFeed';
 import { AIInsights } from '@/components/observatory/AIInsights';
 import { AnomalyDetailDialog } from '@/components/observatory/AnomalyDetailDialog';
 import { ObservatoryOffline } from '@/components/observatory/ObservatoryOffline';
-import type { CanonicalEvent } from '@/types/earth-data';
+import { LanguageContext } from '@/i18n/LanguageContext';
+import type { CanonicalEvent, AITone } from '@/types/earth-data';
 
 
 export const ObservatoryDashboard: React.FC = () => {
+  const langCtx = useContext(LanguageContext);
+  const lang = langCtx?.lang || 'en';
+  
   const { earthTransform, headingStyle } = useScrollParallax();
   const [selectedEventId, setSelectedEventId] = useState('');
   const [activeDomain, setActiveDomain]       = useState<string | null>(null);
@@ -22,12 +26,13 @@ export const ObservatoryDashboard: React.FC = () => {
   const [detailEvent, setDetailEvent]          = useState<CanonicalEvent | null>(null);
   const [detailSpace, setDetailSpace]          = useState<any>(null);
   const [retrying, setRetrying]                = useState(false);
+  const [aiTone, setAiTone]                    = useState<AITone>('scientific');
 
   const { data, loading, dataSource, refetch } = useEarthData();
   const {
     assessment: aiAssessment, loading: aiLoading,
     error: aiError, unavailable: aiUnavailable, generate: aiRefresh,
-  } = useAIAssessment(loading ? null : data);
+  } = useAIAssessment(loading ? null : data, aiTone, lang);
 
   const handleRetry = () => {
     setRetrying(true); refetch();
@@ -124,6 +129,11 @@ export const ObservatoryDashboard: React.FC = () => {
             error={aiError}
             unavailable={aiUnavailable}
             onRefresh={aiRefresh}
+            tone={aiTone}
+            onToneChange={setAiTone}
+            domainScores={data.domainScores}
+            eventCount={filteredEvents.length}
+            sourceCount={data.dataHealth.filter(h => h.online).length}
           />
         </>
       )}
