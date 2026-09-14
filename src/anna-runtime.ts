@@ -1,22 +1,36 @@
 /** Singleton Anna runtime — connects once and shares across the app. */
 
-type LLMMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+type LLMMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string | { type: 'text'; text: string };
+};
 
 type AnnaRuntime = {
   window: { ready(o: Record<string, unknown>): Promise<void> };
   tools: {
-    invoke(
-      toolId: string,
-      method: string,
-      args: Record<string, unknown>,
-    ): Promise<unknown>;
+    invoke(args: {
+      tool_id: string;
+      method?: string;
+      args?: Record<string, unknown>;
+      timeoutMs?: number;
+    }): Promise<unknown>;
   };
   llm: {
     complete(params: {
       messages: LLMMessage[];
-      max_tokens?: number;
+      maxTokens?: number;
       temperature?: number;
-    }): Promise<{ content: string }>;
+    }): Promise<{
+      role: 'assistant';
+      content: string | { type: 'text'; text: string };
+      model?: string;
+      stopReason?: 'endTurn' | 'stopSequence' | 'maxTokens';
+      usage?: {
+        inputTokens: number;
+        outputTokens: number;
+        totalTokens: number;
+      };
+    }>;
   };
 };
 
@@ -28,17 +42,18 @@ export function getAnnaRuntime(): Promise<AnnaRuntime | null> {
   if (!_promise) {
     _promise = (async (): Promise<AnnaRuntime | null> => {
       try {
-        // Function() escapes both TS module resolution and Vite bundling.
-        const load = new Function("u", "return import(u)") as (
-          u: string,
-        ) => Promise<AnnaModule>;
-        const { AnnaAppRuntime } = await load(
-          "/static/anna-apps/_sdk/latest/index.js",
-        );
+        // Variable indirection prevents TS module-resolution and avoids unsafe-eval.
+        const sdkUrl: string = "/static/anna-apps/_sdk/latest/index.js";
+        console.log('[Anna SDK] Attempting to load:', sdkUrl);
+        const { AnnaAppRuntime } = (await import(/* @vite-ignore */ sdkUrl)) as AnnaModule;
+        console.log('[Anna SDK] Loaded successfully, connecting...');
         const runtime = await AnnaAppRuntime.connect();
+        console.log('[Anna SDK] Connected, calling window.ready()...');
         await runtime.window.ready({});
+        console.log('[Anna SDK] Ready complete — runtime initialized');
         return runtime;
-      } catch {
+      } catch (error) {
+        console.error('[Anna SDK] Failed to initialize:', error instanceof Error ? error.message : String(error));
         return null; // running standalone outside the Anna host
       }
     })();
