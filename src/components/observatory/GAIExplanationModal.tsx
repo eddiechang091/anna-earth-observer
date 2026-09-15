@@ -7,17 +7,20 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { DOMAIN_COLORS } from './WorldMap';
+import { DOMAIN_WEIGHTS, GAI_LEVELS, domainColor, type GaiLevelKey } from '@/lib/domain-theme';
 
-const DOMAIN_META: Record<string, { weight: number }> = {
-  earthquake:    { weight: 20 },
-  wildfire:      { weight: 15 },
-  storm:         { weight: 18 },
-  flood:         { weight: 15 },
-  volcano:       { weight: 7 },
-  ice:           { weight: 5 },
-  space_weather: { weight: 20 },
+/** Band key → `dashboard.gaiModal.severity*` message key. */
+const SEVERITY_LABEL_KEY: Record<GaiLevelKey, string> = {
+  normal:   'severityNormal',
+  elevated: 'severityElevated',
+  high:     'severityHigh',
+  veryHigh: 'severityVeryHigh',
+  extreme:  'severityExtreme',
 };
+
+const DOMAIN_META: Record<string, { weight: number }> = Object.fromEntries(
+  Object.entries(DOMAIN_WEIGHTS).map(([domain, weight]) => [domain, { weight }]),
+);
 
 interface Props {
   open: boolean;
@@ -72,7 +75,7 @@ export const GAIExplanationModal: React.FC<Props> = ({ open, onClose }) => {
               }}>
                 <div style={{
                   width: '10px', height: '10px', borderRadius: '50%',
-                  background: DOMAIN_COLORS[domain] ?? '#94a3b8', flexShrink: 0,
+                  background: domainColor(domain), flexShrink: 0,
                 }} />
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -83,7 +86,7 @@ export const GAIExplanationModal: React.FC<Props> = ({ open, onClose }) => {
                   </div>
                 </div>
                 <div style={{
-                  fontSize: '13px', fontWeight: 700, color: DOMAIN_COLORS[domain] ?? '#94a3b8',
+                  fontSize: '13px', fontWeight: 700, color: domainColor(domain),
                   minWidth: '32px', textAlign: 'right',
                 }}>
                   {meta.weight}%
@@ -99,36 +102,29 @@ export const GAIExplanationModal: React.FC<Props> = ({ open, onClose }) => {
             {t('dashboard.gaiModal.severityScale')}
           </h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#36d66d' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(180,185,210,0.8)' }}>
-                <strong style={{ color: '#36d66d' }}>{t('dashboard.gaiModal.severityNormal')}</strong> — {t('dashboard.gaiModal.severityNormalDesc')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#f8e178' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(180,185,210,0.8)' }}>
-                <strong style={{ color: '#f8e178' }}>{t('dashboard.gaiModal.severityElevated')}</strong> — {t('dashboard.gaiModal.severityElevatedDesc')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ffae25' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(180,185,210,0.8)' }}>
-                <strong style={{ color: '#ffae25' }}>{t('dashboard.gaiModal.severityHigh')}</strong> — {t('dashboard.gaiModal.severityHighDesc')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#f97316' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(180,185,210,0.8)' }}>
-                <strong style={{ color: '#f97316' }}>{t('dashboard.gaiModal.severityVeryHigh')}</strong> — {t('dashboard.gaiModal.severityVeryHighDesc')}
-              </span>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}>
-              <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: '#ef4444' }} />
-              <span style={{ fontSize: '12px', color: 'rgba(180,185,210,0.8)' }}>
-                <strong style={{ color: '#ef4444' }}>{t('dashboard.gaiModal.severityExtreme')}</strong> — {t('dashboard.gaiModal.severityExtremeDesc')}
-              </span>
-            </div>
+            {GAI_LEVELS.map((level) => (
+              <div
+                key={level.key}
+                style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '8px 0' }}
+              >
+                <div
+                  style={{
+                    width: '12px',
+                    height: '12px',
+                    borderRadius: '50%',
+                    background: level.color,
+                    flexShrink: 0,
+                  }}
+                />
+                <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                  <strong style={{ color: level.color }}>
+                    {t(`dashboard.gaiModal.${SEVERITY_LABEL_KEY[level.key]}`)}
+                  </strong>
+                  {' \u2014 '}
+                  {t(`dashboard.gaiModal.${SEVERITY_LABEL_KEY[level.key]}Desc`)}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
 
