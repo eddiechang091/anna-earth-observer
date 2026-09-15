@@ -1,6 +1,9 @@
 /** Singleton Anna runtime — connects once and shares across the app. */
 
-type LLMMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+export type LLMMessage = {
+  role: 'system' | 'user' | 'assistant';
+  content: string | { type: 'text'; text: string };
+};
 
 type AnnaRuntime = {
   window: { ready(o: Record<string, unknown>): Promise<void> };
@@ -54,5 +57,12 @@ declare global {
 }
 
 export function getToolId(handle: string, devFallback: string): string {
-  return window.__ANNA_TOOL_IDS__?.[handle] ?? devFallback;
+  // Prefer the Anna-generated sidecar produced at publish/push time.
+  const sidecar = window.__ANNA_TOOL_IDS__?.[handle];
+  if (typeof sidecar === 'string' && sidecar.length > 0) return sidecar;
+  // The dispatcher also resolves bundled handles directly, which is what
+  // `useEarthData` already passes. Returning the canonical handle keeps both
+  // data fetch and LLM proxy on the same resolution path.
+  if (handle === 'earth-data') return 'bundled:earth-data';
+  return devFallback;
 }
