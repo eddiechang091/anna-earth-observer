@@ -36,7 +36,7 @@ type LanguageContextValue = {
   t: (key: string, vars?: Record<string, string | number>) => string;
 };
 
-const LanguageContext = createContext<LanguageContextValue | null>(null);
+export const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 const LANGS: Lang[] = ["en", "fr", "es"];
 
