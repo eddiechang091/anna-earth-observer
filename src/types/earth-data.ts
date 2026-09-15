@@ -1,6 +1,7 @@
 // ─── Legacy display types (kept for AnomalyDetailDialog) ───────────────────
 export type Priority      = 'high' | 'medium' | 'low';
 export type EventSource   = 'usgs' | 'eonet' | 'swpc' | 'celestrak' | 'gdacs';
+export type AITone        = 'scientific' | 'accessible' | 'technical';
 
 export interface AnomalyEvent {
   id: string;
@@ -148,5 +149,8 @@ export interface AIAssessment {
   dataQualityWarnings: string[];
   keyUncertainties: string[];
   analystPriorities: string[];
+  displayMode?: 'structured';
+  rawText?: string;
+  sections?: Array<{ id: string; label: string; content: string; parseAs: 'text' | 'bullets' }>;
 }
 

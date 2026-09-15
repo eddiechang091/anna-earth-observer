@@ -8,6 +8,7 @@ Implements the full Anna Executa protocol:
 from __future__ import annotations
 
 import json
+import os
 import sys
 import traceback
 import urllib.request
@@ -23,6 +24,12 @@ USGS_URL  = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.
 EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50&days=14"
 SWPC_URL  = "https://services.swpc.noaa.gov/products/alerts.json"
 ISS_URL   = "https://api.wheretheiss.at/v1/satellites/25544"
+
+# Cline backup API defaults — the bearer token always comes from the runner
+# environment (CLINE_API_KEY), never from invoke args or stdout.
+CLINE_DEFAULT_BASE_URL = "https://api.cline.bot/api/v1"
+CLINE_DEFAULT_MODEL = "minimax/minimax-m2.5"
+CLINE_TIMEOUT_SECONDS = 60
 
 AVATAR_POOL = ["MC", "AL", "JR", "SN", "KT", "AM", "DB", "RO", "PL", "XT"]
 AVATAR_CLASSES = [
@@ -715,7 +722,127 @@ def fetch_anomalies() -> dict:
     }
 
 
-# ─── JSON-RPC stdio loop ──────────────────────────────────────────────────────
+# --- LLM proxy (Cline backup) ---
+
+class ClineProxyError(Exception):
+    """LLM proxy failure with stable machine-readable code."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+
+
+def _valid_message(msg: Any) -> bool:
+    return (
+        isinstance(msg, dict)
+        and msg.get("role") in {"system", "user", "assistant"}
+        and isinstance(msg.get("content"), str)
+        and len(msg["content"]) > 0
+    )
+
+
+def llm_complete_via_cline(args: dict) -> dict:
+    """Relay chat completion through Cline server-side.
+
+    Key stays in runner env (CLINE_API_KEY). Never echoes key in response.
+    Raises ClineProxyError with code one of: not_configured, invalid_input,
+    cline_rejected, cline_unreachable, cline_bad_response.
+    """
+    api_key = (os.environ.get("CLINE_API_KEY") or "").strip()
+    if not api_key:
+        raise ClineProxyError(
+            "not_configured",
+            "CLINE_API_KEY missing in Executa runner environment.",
+        )
+    messages = args.get("messages") if isinstance(args, dict) else None
+    if not isinstance(messages, list) or not messages:
+        raise ClineProxyError(
+            "invalid_input", "llm.complete needs non-empty messages array.")
+    cleaned = []
+    for msg in messages:
+        if not _valid_message(msg):
+            raise ClineProxyError(
+                "invalid_input",
+                "Each message needs role system/user/assistant + non-empty content.")
+        cleaned.append({"role": msg["role"], "content": msg["content"]})
+    model = args.get("model")
+    if not isinstance(model, str) or not model.strip():
+        model = (os.environ.get("CLINE_MODEL") or "").strip() or CLINE_DEFAULT_MODEL
+    base_url = (os.environ.get("CLINE_BASE_URL")
+                or CLINE_DEFAULT_BASE_URL).strip().rstrip("/")
+    payload: dict[str, Any] = {
+        "model": model, "messages": cleaned, "stream": False}
+    max_tokens = args.get("maxTokens")
+    if max_tokens is not None:
+        if not isinstance(max_tokens, int) or max_tokens <= 0:
+            raise ClineProxyError(
+                "invalid_input", "maxTokens must be positive integer.")
+        payload["max_tokens"] = max_tokens
+    temperature = args.get("temperature")
+    if temperature is not None:
+        if (not isinstance(temperature, (int, float))
+                or not 0 <= temperature <= 2):
+            raise ClineProxyError(
+                "invalid_input", "temperature must be between 0 and 2.")
+        payload["temperature"] = temperature
+    body = json.dumps(payload).encode("utf-8")
+    req = urllib.request.Request(
+        base_url + "/chat/completions",
+        data=body,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": "Bearer " + api_key,
+            "User-Agent": "EarthAnomalyObservatory/1.0.0",
+            "X-Title": "Earth Anomaly Observatory",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=CLINE_TIMEOUT_SECONDS) as rs:
+            data = json.loads(rs.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = ""
+        try:
+            eb = json.loads(exc.read().decode("utf-8"))
+            m = eb.get("error", {}).get("message")
+            if isinstance(m, str) and m:
+                detail = ": " + m
+        except Exception:
+            pass
+        raise ClineProxyError(
+            "cline_rejected", "Cline API " + str(exc.code) + detail) from exc
+    except urllib.error.URLError as exc:
+        raise ClineProxyError(
+            "cline_unreachable",
+            "Cline API unreachable: " + str(exc.reason)) from exc
+    except (TimeoutError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+        raise ClineProxyError(
+            "cline_bad_response",
+            "Cline API unreadable response: " + str(exc)) from exc
+    if not isinstance(data, dict):
+        raise ClineProxyError(
+            "cline_bad_response", "Cline API returned non-object payload.")
+    choices = data.get("choices")
+    text = (choices[0].get("message", {}).get("content")
+            if isinstance(choices, list) and choices else None)
+    if not isinstance(text, str) or not text:
+        raise ClineProxyError(
+            "cline_bad_response", "Cline API returned empty completion.")
+    usage = data.get("usage") if isinstance(data.get("usage"), dict) else {}
+    return {
+        "text": text,
+        "provider": "cline",
+        "model": data.get("model") or model,
+        "usage": {
+            "inputTokens": usage.get("prompt_tokens", 0),
+            "outputTokens": usage.get("completion_tokens", 0),
+            "totalTokens": usage.get("total_tokens", 0),
+        },
+        "via": "executa-proxy",
+    }
+
+
+# --- JSON-RPC stdio loop ---
 
 def _send(obj: dict) -> None:
     sys.stdout.write(json.dumps(obj) + "\n")
@@ -759,7 +886,8 @@ def _handle(msg: dict) -> dict | None:
                 "description": (
                     "Fetches real-time Earth and space anomaly data from USGS Earthquakes, "
                     "NASA EONET natural events, NOAA Space Weather Prediction Center, "
-                    "and ISS satellite tracking."
+                    "and ISS satellite tracking. Also relays LLM chat completions "
+                    "through the Cline backup API with the key held server-side."
                 ),
                 "tools": [
                     {
@@ -770,6 +898,20 @@ def _handle(msg: dict) -> dict | None:
                             "with derived metrics and a Global Anomaly Index score."
                         ),
                         "parameters": [],
+                    },
+                    {
+                        "name": "llm.complete",
+                        "description": (
+                            "Relays a chat completion through the Cline backup API. "
+                            "Holds the API key server-side from CLINE_API_KEY env. "
+                            "Reports not_configured when the key is absent."
+                        ),
+                        "parameters": [
+                            {"name": "messages", "type": "array", "required": True},
+                            {"name": "model", "type": "string", "required": False},
+                            {"name": "maxTokens", "type": "number", "required": False},
+                            {"name": "temperature", "type": "number", "required": False},
+                        ],
                     }
                 ],
             },
@@ -783,14 +925,44 @@ def _handle(msg: dict) -> dict | None:
         }
 
     if method == "invoke":
-        tool: str = params.get("name") or params.get("tool", "")
-        if tool == "anomalies.fetch":
+        tool: str = params.get("name") or params.get("tool") or params.get("method", "")
+        invoke_args = params.get("args")
+        if not isinstance(invoke_args, dict):
+            invoke_args = {
+                k: v for k, v in params.items()
+                if k not in {"name", "tool", "method", "tool_id"}
+            }
+        if tool in {"anomalies.fetch", "anomalies_fetch", "fetch", ""} or tool == "anomalies.fetch":
             try:
                 result = fetch_anomalies()
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {"success": True, "data": result},
+                }
+            except Exception as exc:  # noqa: BLE001
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"success": False, "error": str(exc)},
+                }
+        if tool in {"llm.complete", "llm_complete", "complete"}:
+            try:
+                result = llm_complete_via_cline(invoke_args)
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {"success": True, "data": result},
+                }
+            except ClineProxyError as exc:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "success": False,
+                        "error": exc.code + ": " + str(exc),
+                        "code": exc.code,
+                    },
                 }
             except Exception as exc:  # noqa: BLE001
                 return {

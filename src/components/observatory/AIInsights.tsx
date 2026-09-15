@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import type { AIAssessment } from '@/types/earth-data';
+import type { AIAssessment, AITone } from '@/types/earth-data';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { AISituationAssessment } from './AISituationAssessment';
-import { DOMAIN_COLORS } from './WorldMap';
+import { DOMAIN_COLORS } from '@/lib/domain-theme';
 
 interface AIInsightsProps {
   assessment: AIAssessment | null;
@@ -10,6 +9,13 @@ interface AIInsightsProps {
   error: string | null;
   unavailable: boolean;
   onRefresh: () => void;
+  tone?: AITone;
+  onToneChange?: (tone: AITone) => void;
+  domainScores?: Array<any>;
+  eventCount?: number;
+  sourceCount?: number;
+  providers?: string[];
+  backupConfigured?: boolean;
 }
 
 export const AIInsights: React.FC<AIInsightsProps> = ({
@@ -71,7 +77,7 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
           {assessment.topDevelopments.length > 0 && (
             <ul className="ai-bullets">
               {assessment.topDevelopments.slice(0, 4).map(dev => {
-                const color = DOMAIN_COLORS[dev.domain] ?? '#94a3b8';
+                const color = DOMAIN_COLORS[dev.domain as keyof typeof DOMAIN_COLORS] ?? '#94a3b8';
                 const impColor = dev.importance === 'critical' ? '#ef4444'
                   : dev.importance === 'high'     ? '#f97316'
                   : dev.importance === 'moderate' ? '#f59e0b'
@@ -95,18 +101,6 @@ export const AIInsights: React.FC<AIInsightsProps> = ({
           <button className="ai-expand-btn" onClick={() => setExpanded(v => !v)}>
             {expanded ? t('dashboard.ai.showLess') : t('dashboard.ai.showDetailed')}
           </button>
-
-          {expanded && (
-            <div className="ai-full-assessment">
-              <AISituationAssessment
-                assessment={assessment}
-                loading={false}
-                error={null}
-                unavailable={false}
-                onRefresh={onRefresh}
-              />
-            </div>
-          )}
         </div>
       )}
     </section>

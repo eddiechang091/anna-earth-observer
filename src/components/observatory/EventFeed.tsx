@@ -1,17 +1,19 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { CanonicalEvent, SpaceWeatherEpisode } from '@/types/earth-data';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { DOMAIN_COLORS } from './WorldMap';
+import {
+  SEVERITY,
+  domainColor,
+  domainIcon,
+  prioritySeverity,
+  spaceWeatherName,
+} from '@/lib/domain-theme';
 
-const PRI_COLORS  = { high: '#ef4444', medium: '#f59e0b', low: '#94a3b8' };
-const DOMAIN_ICONS: Record<string, string> = {
-  earthquake: '⊕', wildfire: '▲', storm: '◉',
-  flood: '≋', volcano: '△', ice: '❄', space_weather: '✦',
-};
-const SW_NAMES: Record<string, string> = {
-  geomagnetic_storm: 'Geomagnetic Storm', solar_flare: 'Solar Flare',
-  solar_radiation: 'Radiation Storm',     aurora: 'Aurora Activity',
-  space_weather: 'Space Weather',
+/** Priority → translated severity label (`dashboard.severe|moderate|minor`). */
+const SEVERITY_LABEL_KEY: Record<string, string> = {
+  high:   'dashboard.severe',
+  medium: 'dashboard.moderate',
+  low:    'dashboard.minor',
 };
 
 interface EventFeedProps {
@@ -29,10 +31,145 @@ interface EventFeedProps {
 }
 
 const ITEMS_PER_PAGE = 10;
+const SKELETON_ROWS = 6;
+
+/** Placeholder rows shown during the first load, so an empty list is never
+ *  mistaken for "no events". */
+const FeedSkeletons: React.FC = () => (
+  <>
+    {Array.from({ length: SKELETON_ROWS }, (_, i) => (
+      <div className="feed-skeleton" key={i} aria-hidden="true">
+        <span className="skeleton skeleton--dot" />
+        <span className="feed-skeleton__body">
+          <span className="skeleton skeleton--text" style={{ width: `${72 - i * 5}%` }} />
+          <span className="skeleton skeleton--text" style={{ width: '44%' }} />
+        </span>
+      </div>
+    ))}
+  </>
+);
+
+interface EventRowProps {
+  event: CanonicalEvent;
+  selected: boolean;
+  onSelect: () => void;
+  onOpen: () => void;
+}
+
+/** One canonical event row. Severity carries a glyph as well as a colour. */
+const EventRow: React.FC<EventRowProps> = ({ event, selected, onSelect, onOpen }) => {
+  const { t } = useLanguage();
+  const color = domainColor(event.domain);
+  const severity = SEVERITY[prioritySeverity(event.priority)];
+  const severityLabel = t(SEVERITY_LABEL_KEY[event.priority] ?? 'dashboard.minor');
+  const category = t(`dashboard.domains.${event.domain}`);
+
+  return (
+    <div
+      className={`feed-item${selected ? ' feed-item--selected' : ''}`}
+      style={{ '--item-color': color } as React.CSSProperties}
+      onClick={onSelect}
+      role="button"
+      tabIndex={0}
+      aria-pressed={selected}
+      aria-label={`${event.name}. ${category}, ${event.region}, ${event.ageText}. ${t('aria.severity', { level: severityLabel })}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onOpen();
+      }}
+      title={event.name}
+    >
+      <span className="feed-domain-dot" style={{ background: color }} aria-hidden="true">
+        {domainIcon(event.domain)}
+      </span>
+      <div className="feed-item__body">
+        {/* No JS truncation: the CSS ellipsis handles overflow and the row's
+            title attribute reveals the full name on hover. */}
+        <div className="feed-item__name">
+          {event.name}
+          {event.magnitude > 0 && <span className="feed-mag">M{event.magnitude}</span>}
+        </div>
+        <div className="feed-item__meta">
+          <span style={{ color, fontWeight: 500 }}>{category}</span>
+          <span className="feed-dot-sep">·</span>
+          {event.region}
+          <span className="feed-dot-sep">·</span>
+          {event.ageText}
+        </div>
+      </div>
+      <span className="feed-severity" style={{ color: severity.color }}>
+        <span className="feed-severity__glyph" aria-hidden="true">
+          {severity.glyph}
+        </span>
+        {severityLabel}
+      </span>
+    </div>
+  );
+};
+
+interface SpaceRowProps {
+  episode: SpaceWeatherEpisode;
+  onOpen: () => void;
+}
+
+/** One space-weather episode row. */
+const SpaceWeatherRow: React.FC<SpaceRowProps> = ({ episode, onOpen }) => {
+  const { t } = useLanguage();
+  const color = domainColor('space_weather');
+  const severity =
+    SEVERITY[episode.severity >= 4 ? 'severe' : episode.severity >= 3 ? 'moderate' : 'minor'];
+  const name = spaceWeatherName(episode.phenomenon, episode.phenomenonLabel);
+
+  return (
+    <div
+      className="feed-item feed-item--space"
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      aria-label={`${name}. ${t('aria.severity', { level: severity.label })}. ${episode.ageText}`}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') onOpen();
+      }}
+      title={episode.phenomenonLabel}
+    >
+      <span className="feed-domain-dot" style={{ background: color }} aria-hidden="true">
+        {domainIcon('space_weather')}
+      </span>
+      <div className="feed-item__body">
+        <div className="feed-item__name">
+          {name}
+          {episode.scale && (
+            <span className="feed-badge" style={{ background: color }}>
+              {episode.scale}
+            </span>
+          )}
+        </div>
+        <div className="feed-item__meta">
+          {t('aria.severity', { level: severity.label })} · {episode.ageText} ·{' '}
+          {episode.observedOrForecast}
+        </div>
+      </div>
+      <span className="feed-severity" style={{ color: severity.color }}>
+        <span className="feed-severity__glyph" aria-hidden="true">
+          {severity.glyph}
+        </span>
+        {episode.severity}/5
+      </span>
+    </div>
+  );
+};
 
 export const EventFeed: React.FC<EventFeedProps> = ({
-  events, spaceWeatherEpisodes, selectedEventId, onSelectEvent, onOpenDetail,
-  searchQuery, onSearchChange, onExport, onSync, loading, activeDomain,
+  events,
+  spaceWeatherEpisodes,
+  selectedEventId,
+  onSelectEvent,
+  onOpenDetail,
+  searchQuery,
+  onSearchChange,
+  onExport,
+  onSync,
+  loading,
+  activeDomain,
 }) => {
   const [currentPage, setCurrentPage] = useState(0);
   const { t } = useLanguage();
@@ -43,168 +180,134 @@ export const EventFeed: React.FC<EventFeedProps> = ({
       const list = spaceWeatherEpisodes;
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
-        const filtered = list.filter(e => 
-          (SW_NAMES[e.phenomenon] ?? e.phenomenonLabel).toLowerCase().includes(q)
+        const matches = list.filter((e) =>
+          spaceWeatherName(e.phenomenon, e.phenomenonLabel).toLowerCase().includes(q),
         );
-        return { filtered, pageCount: Math.ceil(filtered.length / ITEMS_PER_PAGE), isSpaceWeather: true };
+        return { filtered: matches, pageCount: Math.ceil(matches.length / ITEMS_PER_PAGE), isSpaceWeather: true };
       }
       return { filtered: list, pageCount: Math.ceil(list.length / ITEMS_PER_PAGE), isSpaceWeather: true };
     }
 
     // Canonical events section
-    let list = activeDomain ? events.filter(e => e.domain === activeDomain) : events;
+    let list = activeDomain ? events.filter((e) => e.domain === activeDomain) : events;
     if (searchQuery) {
       const q = searchQuery.toLowerCase();
-      list = list.filter(e =>
-        e.name.toLowerCase().includes(q) || e.region.toLowerCase().includes(q),
+      list = list.filter(
+        (e) => e.name.toLowerCase().includes(q) || e.region.toLowerCase().includes(q),
       );
     }
     return { filtered: list, pageCount: Math.ceil(list.length / ITEMS_PER_PAGE), isSpaceWeather: false };
   }, [events, spaceWeatherEpisodes, activeDomain, searchQuery]);
 
-  // Reset page when filter changes
-  React.useEffect(() => {
+  // Reset page when the filter changes
+  useEffect(() => {
     setCurrentPage(0);
   }, [activeDomain, searchQuery]);
 
   const displayed = filtered.slice(currentPage * ITEMS_PER_PAGE, (currentPage + 1) * ITEMS_PER_PAGE);
   const totalCount = filtered.length;
+  const showSkeletons = loading && displayed.length === 0;
 
   return (
     <div className="event-feed">
       {/* Search + action bar */}
       <div className="feed-header">
         <div className="feed-search">
-          <span className="feed-search__icon">⊹</span>
+          <span className="feed-search__icon" aria-hidden="true">
+            ⊹
+          </span>
           <input
             type="search"
             className="feed-search__input"
             placeholder={t('dashboard.search')}
             value={searchQuery}
-            onChange={e => onSearchChange(e.target.value)}
-            aria-label="Search events"
+            onChange={(e) => onSearchChange(e.target.value)}
+            aria-label={t('dashboard.search')}
           />
         </div>
         <div className="feed-actions">
-          <button className="feed-action-btn" onClick={onSync} disabled={loading} title="Refresh">
+          <button
+            type="button"
+            className="feed-action-btn"
+            onClick={onSync}
+            disabled={loading}
+            title={t('dashboard.refresh')}
+            aria-label={t('dashboard.refresh')}
+          >
             {loading ? '…' : '↻'}
           </button>
-          <button className="feed-action-btn" onClick={onExport} title="Export JSON">↓</button>
+          <button
+            type="button"
+            className="feed-action-btn"
+            onClick={onExport}
+            title={t('dashboard.export')}
+            aria-label={t('dashboard.export')}
+          >
+            ↓
+          </button>
         </div>
       </div>
 
       {/* Count row */}
       <div className="feed-count">
-        <span>
-          {totalCount} {totalCount !== 1 ? t('dashboard.eventCountPl') : t('dashboard.eventCount')}
-          {activeDomain && !isSpaceWeather ? ` · ${t(`dashboard.domains.${activeDomain}`) || activeDomain}` : ''}
-          {activeDomain && isSpaceWeather ? ` · ${t('dashboard.domains.space_weather')}` : ''}
-          {searchQuery ? ` · "${searchQuery}"` : ''}
-        </span>
+        {totalCount} {totalCount !== 1 ? t('dashboard.eventCountPl') : t('dashboard.eventCount')}
+        {activeDomain && !isSpaceWeather ? ` · ${t(`dashboard.domains.${activeDomain}`)}` : ''}
+        {activeDomain && isSpaceWeather ? ` · ${t('dashboard.domains.space_weather')}` : ''}
+        {searchQuery ? ` · "${searchQuery}"` : ''}
       </div>
 
       {/* Scrollable list */}
-      <div className="feed-list">
-        {/* Space weather episodes */}
-        {isSpaceWeather && displayed.length === 0 ? (
-          <div className="feed-empty">
-            {loading ? t('dashboard.loading') : t('dashboard.noEvents')}
-          </div>
-        ) : isSpaceWeather ? (
-          (displayed as SpaceWeatherEpisode[]).map(ep => (
-            <div
-              key={ep.id}
-              className="feed-item feed-item--space"
-              onClick={() => onOpenDetail(ep)}
-              role="button" tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && onOpenDetail(ep)}
-              title="Click for details"
-              style={{ cursor: 'pointer' }}
-            >
-              <span className="feed-domain-dot" style={{ background: '#a855f7' }}>✦</span>
-              <div className="feed-item__body">
-                <div className="feed-item__name">
-                  {SW_NAMES[ep.phenomenon] ?? ep.phenomenonLabel}
-                  {ep.scale && (
-                    <span className="feed-badge" style={{ background: '#a855f7' }}>{ep.scale}</span>
-                  )}
-                </div>
-                <div className="feed-item__meta">
-                  Severity {ep.severity}/5 · {ep.ageText} ago · {ep.observedOrForecast}
-                </div>
-              </div>
-              <span className="feed-priority" style={{ color: '#a855f7' }}>Space Weather</span>
-            </div>
+      <div className="feed-list" aria-label={t('aria.eventsList')}>
+        {showSkeletons && <FeedSkeletons />}
+
+        {!showSkeletons && isSpaceWeather && (
+          (displayed as SpaceWeatherEpisode[]).map((ep) => (
+            <SpaceWeatherRow key={ep.id} episode={ep} onOpen={() => onOpenDetail(ep)} />
           ))
-        ) : displayed.length === 0 ? (
+        )}
+
+        {!showSkeletons && !isSpaceWeather && displayed.length === 0 && (
           <div className="feed-empty">
             {loading ? t('dashboard.loading') : t('dashboard.noEvents')}
           </div>
-        ) : (
-          (displayed as CanonicalEvent[]).map(ev => {
-            const color    = DOMAIN_COLORS[ev.domain] ?? '#94a3b8';
-            const priColor = PRI_COLORS[ev.priority] ?? '#94a3b8';
-            const priLabels = {high: t('dashboard.severe'), medium: t('dashboard.moderate'), low: t('dashboard.minor')};
-            const priLabel = priLabels[ev.priority] ?? ev.priority;
-            const icon     = DOMAIN_ICONS[ev.domain] ?? '●';
-            const category = t(`dashboard.domains.${ev.domain}`);
-            const isSel    = ev.id === selectedEventId;
-            return (
-              <div
-                key={ev.id}
-                className={`feed-item${isSel ? ' feed-item--selected' : ''}`}
-                style={{ '--item-color': color } as React.CSSProperties}
-                onClick={() => onSelectEvent(isSel ? '' : ev.id)}
-                role="button" tabIndex={0}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onOpenDetail(ev);
-                }}
-                title="Click to highlight on map · Press Enter for details"
-              >
-                <span className="feed-domain-dot" style={{ background: color, fontSize: '9px' }}>
-                  {icon}
-                </span>
-                <div className="feed-item__body">
-                  <div className="feed-item__name">
-                    {ev.name.length > 34 ? ev.name.slice(0, 34) + '…' : ev.name}
-                    {ev.magnitude > 0 && (
-                      <span className="feed-mag">M{ev.magnitude}</span>
-                    )}
-                  </div>
-                  <div className="feed-item__meta">
-                    <span style={{ fontSize: '10px', color: color, fontWeight: 500 }}>{category}</span>
-                    <span className="feed-dot-sep">·</span>
-                    {ev.region.length > 20 ? ev.region.slice(0, 20) + '…' : ev.region}
-                    <span className="feed-dot-sep">·</span>
-                    {ev.ageText} ago
-                  </div>
-                </div>
-                <span className="feed-priority" style={{ color: priColor }}>{priLabel}</span>
-              </div>
-            );
-          })
         )}
+
+        {!showSkeletons && !isSpaceWeather &&
+          (displayed as CanonicalEvent[]).map((ev) => {
+            const isSelected = ev.id === selectedEventId;
+            return (
+              <EventRow
+                key={ev.id}
+                event={ev}
+                selected={isSelected}
+                onSelect={() => onSelectEvent(isSelected ? '' : ev.id)}
+                onOpen={() => onOpenDetail(ev)}
+              />
+            );
+          })}
       </div>
 
       {/* Pagination controls */}
       {pageCount > 1 && (
         <div className="feed-pagination">
           <button
-            onClick={() => setCurrentPage(p => Math.max(0, p - 1))}
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.max(0, p - 1))}
             disabled={currentPage === 0}
             className="feed-pagination__btn"
-            title="Previous page"
+            aria-label={t('pagination.previous')}
           >
             ‹
           </button>
           <span className="feed-pagination__info">
-            Page {currentPage + 1} of {pageCount}
+            {t('dashboard.pageOf')} {currentPage + 1} {t('dashboard.of')} {pageCount}
           </span>
           <button
-            onClick={() => setCurrentPage(p => Math.min(pageCount - 1, p + 1))}
+            type="button"
+            onClick={() => setCurrentPage((p) => Math.min(pageCount - 1, p + 1))}
             disabled={currentPage === pageCount - 1}
             className="feed-pagination__btn"
-            title="Next page"
+            aria-label={t('pagination.next')}
           >
             ›
           </button>
@@ -213,3 +316,5 @@ export const EventFeed: React.FC<EventFeedProps> = ({
     </div>
   );
 };
+
+export default EventFeed;

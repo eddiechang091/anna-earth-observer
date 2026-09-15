@@ -1,27 +1,7 @@
 import React from 'react';
 import type { DomainScore, EventDomain } from '@/types/earth-data';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { DOMAIN_COLORS } from './WorldMap';
-
-const DOMAIN_META: Record<EventDomain, { icon: string }> = {
-  earthquake:    { icon: '⊕' },
-  wildfire:      { icon: '▲' },
-  storm:         { icon: '◉' },
-  flood:         { icon: '≋' },
-  volcano:       { icon: '△' },
-  ice:           { icon: '❄' },
-  space_weather: { icon: '✦' },
-};
-
-const scoreToAlert = (score: number, t: any): { label: string; color: string } => {
-  if (score <= 10)  return { label: t('dashboard.alerts.normal'),       color: '#36d66d' };
-  if (score <= 30)  return { label: t('dashboard.alerts.elevated'),     color: '#f8e178' };
-  if (score <= 55)  return { label: t('dashboard.alerts.highActivity'), color: '#ffae25' };
-  if (score <= 75)  return { label: t('dashboard.alerts.veryHigh'),    color: '#f97316' };
-  return               { label: t('dashboard.alerts.critical'),     color: '#ef4444' };
-};
-
-const TREND = { rising: '↑', stable: '→', falling: '↓' } as const;
+import { DOMAIN_ORDER, TREND_GLYPH, domainColor, domainIcon, scoreBand } from '@/lib/domain-theme';
 
 interface DomainStatusStripProps {
   domainScores: DomainScore[];
@@ -30,39 +10,87 @@ interface DomainStatusStripProps {
   loading?: boolean;
 }
 
+/**
+ * Per-domain risk cards.
+ *
+ * Adds the 0–100 anomaly score (the app's primary metric, previously not shown
+ * here at all), a score meter, and an always-visible domain accent rail. The
+ * alert band is encoded with a colour *and* a dot so it is not colour-only.
+ */
 export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
-  domainScores, activeDomain, onToggleDomain, loading = false,
+  domainScores,
+  activeDomain,
+  onToggleDomain,
+  loading = false,
 }) => {
   const { t } = useLanguage();
+
+  // Skeleton placeholders while the first fetch is in flight, so a real 0 is
+  // never mistaken for "no data yet".
+  if (loading && domainScores.length === 0) {
+    return (
+      <div className="domain-strip">
+        {DOMAIN_ORDER.map((domain) => (
+          <div className="domain-card domain-card--loading" key={domain} aria-hidden="true">
+            <span className="domain-card__head">
+              <span className="skeleton skeleton--dot" />
+            </span>
+            <span className="skeleton skeleton--text" style={{ width: '68%' }} />
+            <span className="skeleton skeleton--score" />
+            <span className="domain-card__foot">
+              <span className="skeleton skeleton--text" />
+            </span>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
-  <div className="domain-strip">
-    {domainScores.map(ds => {
-      const meta   = DOMAIN_META[ds.domain as EventDomain];
-      const alert  = scoreToAlert(ds.score, t);
-      const color  = DOMAIN_COLORS[ds.domain] ?? '#94a3b8';
-      const active = activeDomain === ds.domain;
-      const shortLabel = t(`dashboard.domains.${ds.domain}`);
-      return (
-        <button
-          key={ds.domain}
-          className={`domain-card${active ? ' domain-card--active' : ''}`}
-          style={{ '--domain-color': color, '--alert-color': alert.color } as React.CSSProperties}
-          onClick={() => onToggleDomain(active ? null : ds.domain)}
-          aria-pressed={active}
-          title={ds.mainDriver}
-        >
-          <span className="domain-card__icon" style={{ color }}>{meta?.icon ?? '●'}</span>
-          <span className="domain-card__name">{shortLabel ?? ds.domain}</span>
-          <strong className="domain-card__count" style={{ opacity: loading ? 0.4 : 1 }}>
-            {ds.eventCount}
-          </strong>
-          <span className="domain-card__label" style={{ color: alert.color }}>{alert.label}</span>
-          <span className="domain-card__trend" style={{ color }}>
-            {TREND[ds.trend] ?? '→'}
-          </span>
-        </button>
-      );
-    })}
-  </div>
+    <div className="domain-strip">
+      {domainScores.map((ds) => {
+        const domain = ds.domain as EventDomain;
+        const color = domainColor(domain);
+        const band = scoreBand(ds.score);
+        const active = activeDomain === domain;
+        const name = t(`dashboard.domains.${domain}`);
+        const bandLabel = t(`dashboard.alerts.${band.key}`);
+
+        return (
+          <button
+            key={domain}
+            type="button"
+            className={`domain-card${active ? ' domain-card--active' : ''}`}
+            style={{ '--domain-color': color, '--alert-color': band.color } as React.CSSProperties}
+            onClick={() => onToggleDomain(active ? null : domain)}
+            aria-pressed={active}
+            aria-label={`${name}: ${ds.eventCount} ${t('dashboard.eventCountPl')}, ${t('domain.score')} ${ds.score}/100, ${bandLabel}`}
+            title={ds.mainDriver}
+          >
+            <span className="domain-card__head">
+              <span className="domain-card__icon" style={{ color }} aria-hidden="true">
+                {domainIcon(domain)}
+              </span>
+              <span className="domain-card__trend" style={{ color }} aria-hidden="true">
+                {TREND_GLYPH[ds.trend] ?? TREND_GLYPH.stable}
+              </span>
+            </span>
+            <span className="domain-card__name">{name}</span>
+            <strong className="domain-card__count">{ds.eventCount}</strong>
+            <span className="domain-card__label" style={{ color: band.color }}>
+              {bandLabel}
+            </span>
+            <span className="domain-card__foot">
+              <span className="domain-card__meter" aria-hidden="true">
+                <span style={{ width: `${Math.min(Math.max(ds.score, 0), 100)}%` }} />
+              </span>
+              <span className="domain-card__score">{ds.score}</span>
+            </span>
+          </button>
+        );
+      })}
+    </div>
   );
 };
+
+export default DomainStatusStrip;
