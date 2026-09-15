@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useContext } from 'react';
 import { useScrollParallax } from '@/hooks/useScrollParallax';
 import { useEarthData } from '@/hooks/useEarthData';
 import { useAIAssessment } from '@/hooks/useAIAssessment';
@@ -11,10 +11,26 @@ import { EventFeed } from '@/components/observatory/EventFeed';
 import { AIInsights } from '@/components/observatory/AIInsights';
 import { AnomalyDetailDialog } from '@/components/observatory/AnomalyDetailDialog';
 import { ObservatoryOffline } from '@/components/observatory/ObservatoryOffline';
-import type { CanonicalEvent } from '@/types/earth-data';
+import { clineConfigured } from '@/lib/llm';
+import { LanguageContext } from '@/i18n/LanguageContext';
+import { useIsMobile } from '@/hooks/use-mobile';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
+import type { CanonicalEvent, AITone } from '@/types/earth-data';
 
 
 export const ObservatoryDashboard: React.FC = () => {
+  const langCtx = useContext(LanguageContext);
+  const lang = langCtx?.lang || 'en';
+  // Defensive fallback keeps the page renderable outside the provider.
+  const t = langCtx?.t ?? ((key: string) => key);
+  const isMobile = useIsMobile();
+  
   const { earthTransform, headingStyle } = useScrollParallax();
   const [selectedEventId, setSelectedEventId] = useState('');
   const [activeDomain, setActiveDomain]       = useState<string | null>(null);
@@ -22,12 +38,16 @@ export const ObservatoryDashboard: React.FC = () => {
   const [detailEvent, setDetailEvent]          = useState<CanonicalEvent | null>(null);
   const [detailSpace, setDetailSpace]          = useState<any>(null);
   const [retrying, setRetrying]                = useState(false);
+  const [aiTone, setAiTone]                    = useState<AITone>('scientific');
+  const [eventsOpen, setEventsOpen]            = useState(false);
 
   const { data, loading, dataSource, refetch } = useEarthData();
   const {
     assessment: aiAssessment, loading: aiLoading,
-    error: aiError, unavailable: aiUnavailable, generate: aiRefresh,
-  } = useAIAssessment(loading ? null : data);
+    error: aiError, unavailable: aiUnavailable,
+    providers: aiProviders, generate: aiRefresh,
+  } = useAIAssessment(loading ? null : data, aiTone, lang);
+  const backupConfigured = clineConfigured();
 
   const handleRetry = () => {
     setRetrying(true); refetch();
@@ -54,6 +74,27 @@ export const ObservatoryDashboard: React.FC = () => {
 
   const showOffline = !loading && dataSource === 'offline';
 
+  // Single EventFeed definition: rendered inline on desktop and inside the
+  // bottom-sheet drawer on mobile.
+  const eventFeed = (
+    <EventFeed
+      events={filteredEvents}
+      spaceWeatherEpisodes={data.spaceWeatherEpisodes}
+      selectedEventId={selectedEventId}
+      onSelectEvent={setSelectedEventId}
+      onOpenDetail={(evt) => {
+        if ('domain' in evt) setDetailEvent(evt);
+        else setDetailSpace(evt);
+      }}
+      searchQuery={searchQuery}
+      onSearchChange={setSearchQuery}
+      onExport={handleExport}
+      onSync={refetch}
+      loading={loading}
+      activeDomain={activeDomain}
+    />
+  );
+
   return (
     <div className="app-shell">
       <EarthBackground scale={earthTransform.scale} y={earthTransform.y} />
@@ -68,7 +109,12 @@ export const ObservatoryDashboard: React.FC = () => {
         onClose={() => setDetailSpace(null)}
       />
 
-      <TopBar />
+      <TopBar
+        feedsOnline={data.dataHealth.filter((h) => h.online).length}
+        feedsTotal={data.dataHealth.length || 4}
+        fetchedAt={data.fetchedAt}
+        dataSource={dataSource}
+      />
 
       {showOffline ? (
         <ObservatoryOffline onRetry={handleRetry} retrying={retrying} />
@@ -100,22 +146,36 @@ export const ObservatoryDashboard: React.FC = () => {
               onOpenDetail={setDetailEvent}
               activeDomain={activeDomain}
             />
-            <EventFeed
-              events={filteredEvents}
-              spaceWeatherEpisodes={data.spaceWeatherEpisodes}
-              selectedEventId={selectedEventId}
-              onSelectEvent={setSelectedEventId}
-              onOpenDetail={(evt) => {
-                if ('domain' in evt) setDetailEvent(evt);
-                else setDetailSpace(evt);
-              }}
-              searchQuery={searchQuery}
-              onSearchChange={setSearchQuery}
-              onExport={handleExport}
-              onSync={refetch}
-              loading={loading}
-              activeDomain={activeDomain}
-            />
+            {isMobile ? (
+              <>
+                <div className="mobile-events-bar">
+                  <button type="button" className="events-fab" onClick={() => setEventsOpen(true)}>
+                    {t('events.title')}
+                    <span className="events-fab__count">{filteredEvents.length}</span>
+                  </button>
+                </div>
+                <Drawer
+                  open={eventsOpen}
+                  onOpenChange={setEventsOpen}
+                  shouldScaleBackground={false}
+                >
+                  <DrawerContent className="events-drawer">
+                    <DrawerHeader className="events-drawer__header">
+                      <DrawerTitle className="events-drawer__title">{t('events.title')}</DrawerTitle>
+                      <DrawerDescription className="events-drawer__sub">
+                        {t('events.subtitle', {
+                          count: filteredEvents.length,
+                          sources: data.dataHealth.filter((h) => h.online).length,
+                        })}
+                      </DrawerDescription>
+                    </DrawerHeader>
+                    {eventFeed}
+                  </DrawerContent>
+                </Drawer>
+              </>
+            ) : (
+              <div className="feed-inline">{eventFeed}</div>
+            )}
           </div>
 
           <AIInsights
@@ -124,6 +184,13 @@ export const ObservatoryDashboard: React.FC = () => {
             error={aiError}
             unavailable={aiUnavailable}
             onRefresh={aiRefresh}
+            tone={aiTone}
+            onToneChange={setAiTone}
+            domainScores={data.domainScores}
+            eventCount={filteredEvents.length}
+            sourceCount={data.dataHealth.filter(h => h.online).length}
+            providers={aiProviders}
+            backupConfigured={backupConfigured}
           />
         </>
       )}
