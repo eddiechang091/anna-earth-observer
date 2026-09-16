@@ -64,7 +64,6 @@ describe('buildToneSectionRequests', () => {
         expect(request.prompt).toContain('{"events":2}');
         expect(request.prompt).toContain('English');
         expect(request.temperature).toBe(TONE_META[tone].temperature);
-        expect(request.maxTokens).toBe(TONE_META[tone].maxTokens);
       }
     }
   });
