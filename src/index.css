@@ -949,6 +949,79 @@ body {
 .map-sw-overlay__item { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-micro); color: var(--text-secondary); white-space: nowrap; }
 .map-sw-overlay__scale { font-weight: 700; color: var(--text-primary); }
 
+/* Reset-view control. It nests under the zoom buttons so the recovery action
+   sits with the other camera controls instead of hiding in a menu — the review
+   asked for an obvious way back after a lost map view. */
+.map-reset-control.leaflet-bar {
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+  margin-top: 8px;
+}
+
+.map-reset-control__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--line-hairline);
+  border-radius: 10px;
+  background: rgba(32, 35, 45, 0.9);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  pointer-events: auto;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition: background 150ms ease, color 150ms ease, border-color 150ms ease;
+}
+
+.map-reset-control__btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.map-reset-control__btn:hover {
+  background: rgba(50, 55, 70, 0.95);
+  border-color: var(--accent-purple);
+  color: var(--accent-purple);
+}
+
+.map-reset-control__btn:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Tile-source notices: without one, a blocked tile host looks exactly like a
+   broken map. Amber = running on a backup host, red = no basemap at all. */
+.map-tiles-notice {
+  position: absolute;
+  top: var(--space-3);
+  right: var(--space-3);
+  z-index: 500;
+  max-width: min(320px, calc(100% - 24px));
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  background: rgba(38, 28, 8, 0.86);
+  color: #fde68a;
+  font-size: var(--fs-micro);
+  line-height: 1.4;
+  pointer-events: none;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.map-tiles-notice--error {
+  border-color: rgba(248, 113, 113, 0.42);
+  background: rgba(45, 16, 16, 0.88);
+  color: #fecaca;
+}
+
 /* Event feed */
 .event-feed { background: var(--glass-bg); backdrop-filter: blur(var(--glass-blur)); -webkit-backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--line-hairline); border-radius: 18px; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 .feed-header { display: flex; align-items: center; gap: 8px; padding: 11px 12px 8px; border-bottom: 1px solid var(--line-hairline); flex-shrink: 0; }
@@ -1219,6 +1292,15 @@ body {
   .map-legend { max-width: 180px; padding: 8px 10px; }
   .map-legend__row { gap: 3px 8px; }
   .map-sw-overlay { padding: 6px 10px; }
+  /* On a phone the top-right corner holds the centred space-weather band, so the
+     reset pill shrinks and the tile notice drops below the control stack. */
+  .map-reset-control__btn { padding: 0 8px; font-size: 10px; }
+  .map-tiles-notice {
+    top: 120px;
+    right: auto;
+    left: var(--space-3);
+    max-width: calc(100% - var(--space-3) * 2);
+  }
   /* Six tone chips would wrap into a tower on a phone: make the rail scroll. */
   .ai-tone-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
   .ai-tone-bar::-webkit-scrollbar { display: none; }
