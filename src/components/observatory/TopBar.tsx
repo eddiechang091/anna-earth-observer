@@ -1,6 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { LANG_OPTIONS } from '@/i18n/messages';
 import { useLanguage } from '@/i18n/LanguageContext';
+import {
+  eventTimestampAriaLabel,
+  formatEventTimestamp,
+} from '@/lib/event-source';
 import type { DataSource } from '@/hooks/useEarthData';
 
 interface TopBarProps {
@@ -14,15 +18,9 @@ interface TopBarProps {
   dataSource?: DataSource;
 }
 
-/** Compact relative age, e.g. `<1m`, `7m`, `2h`. */
-function formatAge(fetchedAt?: string): string | null {
-  if (!fetchedAt) return null;
-  const then = new Date(fetchedAt).getTime();
-  if (Number.isNaN(then)) return null;
-  const minutes = Math.max(0, Math.round((Date.now() - then) / 60000));
-  if (minutes < 1) return '<1m';
-  if (minutes < 60) return `${minutes}m`;
-  return `${Math.round(minutes / 60)}h`;
+/** Absolute last-updated timestamp with the local timezone, never a bare age. */
+function formatUpdated(fetchedAt?: string, lang = 'en'): string | null {
+  return formatEventTimestamp(fetchedAt, lang);
 }
 
 /**
@@ -50,7 +48,8 @@ export const TopBar: React.FC<TopBarProps> = ({
   }, []);
 
   const isLive = dataSource !== 'offline';
-  const age = formatAge(fetchedAt);
+  const updated = formatUpdated(fetchedAt, lang);
+  const updatedAria = eventTimestampAriaLabel(fetchedAt, lang);
 
   return (
     <header className={`topbar${stuck ? ' topbar--stuck' : ''}`}>
@@ -64,7 +63,11 @@ export const TopBar: React.FC<TopBarProps> = ({
         <span className="status-chip">
           {t('topbar.feeds', { online: feedsOnline, total: feedsTotal })}
         </span>
-        {age && <span className="status-chip">{t('topbar.updated', { time: age })}</span>}
+        {updated && (
+          <span className="status-chip" title={updatedAria ?? undefined}>
+            {t('topbar.updated', { time: updated })}
+          </span>
+        )}
       </div>
 
       <div className="topbar-actions">
