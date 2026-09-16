@@ -40,17 +40,15 @@ export interface ToneMeta {
   tint: string;
   /** Sampling temperature — comedic tones need latitude, factual tones do not. */
   temperature: number;
-  /** Token ceiling per section request. */
-  maxTokens: number;
 }
 
 export const TONE_META: Record<AITone, ToneMeta> = {
-  scientific: { icon: '◎', bulletIcon: '›', accent: '#5eead4', tint: 'rgba(94,234,212,0.16)', temperature: 0.2, maxTokens: 260 },
-  playful:    { icon: '✦', bulletIcon: '🌟', accent: '#a78bfa', tint: 'rgba(167,139,250,0.18)', temperature: 0.7, maxTokens: 220 },
-  hilarious:  { icon: '☺', bulletIcon: '💀', accent: '#fb7185', tint: 'rgba(251,113,133,0.18)', temperature: 0.9, maxTokens: 220 },
-  kids:       { icon: '★', bulletIcon: '⭐', accent: '#fcd34d', tint: 'rgba(252,211,77,0.16)', temperature: 0.5, maxTokens: 240 },
-  coach:      { icon: '▲', bulletIcon: '✓', accent: '#4ade80', tint: 'rgba(74,222,128,0.16)', temperature: 0.5, maxTokens: 240 },
-  alert:      { icon: '⚠', bulletIcon: '⚠', accent: '#ff5b66', tint: 'rgba(255,91,102,0.20)', temperature: 0.25, maxTokens: 240 },
+  scientific: { icon: '◎', bulletIcon: '›', accent: '#5eead4', tint: 'rgba(94,234,212,0.16)', temperature: 0.2 },
+  playful:    { icon: '✦', bulletIcon: '🌟', accent: '#a78bfa', tint: 'rgba(167,139,250,0.18)', temperature: 0.7 },
+  hilarious:  { icon: '☺', bulletIcon: '💀', accent: '#fb7185', tint: 'rgba(251,113,133,0.18)', temperature: 0.9 },
+  kids:       { icon: '★', bulletIcon: '⭐', accent: '#fcd34d', tint: 'rgba(252,211,77,0.16)', temperature: 0.5 },
+  coach:      { icon: '▲', bulletIcon: '✓', accent: '#4ade80', tint: 'rgba(74,222,128,0.16)', temperature: 0.5 },
+  alert:      { icon: '⚠', bulletIcon: '⚠', accent: '#ff5b66', tint: 'rgba(255,91,102,0.20)', temperature: 0.25 },
 };
 
 /** Language the model must answer in, per UI language. */
@@ -296,7 +294,6 @@ export interface ToneSectionRequest {
   parseAs: 'text' | 'bullets';
   prompt: string;
   temperature: number;
-  maxTokens: number;
 }
 
 /**
@@ -317,7 +314,6 @@ export function buildToneSectionRequests(
     id: spec.id,
     parseAs: spec.parseAs,
     temperature: meta.temperature,
-    maxTokens: meta.maxTokens,
     prompt: [
       ANALYSIS_RULES,
       TONE_GUARDRAILS[tone],
