@@ -43,7 +43,7 @@ The UI supports English, French (Canadian), and Spanish with live language switc
 | Component Library | Radix UI primitives + shadcn/ui |
 | Maps & Visualization | Leaflet 1.9.4 + OpenStreetMap tiles |
 | Data Fetching | Native fetch API + Promise.allSettled |
-| AI/LLM Integration | Anna Runtime (LLM-powered analysis) |
+| AI/LLM Integration | Anna Runtime (primary) + Cline API (fallback) |
 | Internationalization | Context API + localStorage |
 | Error Tracking | Sentry |
 | Package Manager | pnpm 9.x |
@@ -67,22 +67,24 @@ anna-earth-observer/
     +-- routes.tsx              # Route definitions
     +-- index.css               # Global styles and design tokens
     +-- components/
-    |   +-- common/             # Shared utility components
+    |   +-- common/             # Shared utility components (SkipLink, PageMeta)
     |   +-- observatory/        # Dashboard-specific components
-    |   |   +-- TopBar.tsx
-    |   |   +-- PageHeading.tsx
-    |   |   +-- LeftColumn.tsx
-    |   |   +-- CenterColumn.tsx
-    |   |   +-- RightColumn.tsx
-    |   |   +-- EarthBackground.tsx
+    |   |   +-- TopBar.tsx              # Brand, live status chips, language switch
+    |   |   +-- GlobalStatusHero.tsx    # Headline counts + Global Anomaly Index gauge
+    |   |   +-- DomainStatusStrip.tsx   # Per-domain score cards (domain filter)
+    |   |   +-- MapOverlays.tsx         # Map legend + space-weather band
+    |   |   +-- WorldMap.tsx            # Leaflet dark-basemap event map
+    |   |   +-- EventFeed.tsx           # Filterable, paged event list
+    |   |   +-- AIInsights.tsx          # Tone-aware AI assessment panel
+    |   |   +-- AnomalyDetailDialog.tsx # Per-event / per-episode detail dialog
+    |   |   +-- GAIExplanationModal.tsx # Index methodology explainer
+    |   |   +-- ObservatoryOffline.tsx  # All-sources-down state
+    |   |   +-- EarthBackground.tsx     # Parallax Earth video layer
     |   +-- ui/                 # shadcn/ui component library
-    +-- contexts/               # React context providers
-    +-- db/                     # Supabase client configuration
     +-- hooks/                  # Custom React hooks
     +-- i18n/                   # Internationalisation (en / fr / es)
-    +-- lib/                    # Shared utilities
+    +-- lib/                    # Shared utilities + domain-theme.ts design tokens
     +-- pages/                  # Page-level components
-    +-- services/               # API / data-access layer
     +-- types/                  # Shared TypeScript types
 ```
 
@@ -195,6 +197,25 @@ The `useAIAssessment` hook:
 
 **AI Safety** - The system prompt enforces strict rules: no causal claims without evidence, no probabilistic forecasts without calibrated models, and preservation of source units and NOAA scales.
 
+### LLM Provider Fallback
+
+`src/lib/llm.ts` wraps every completion call in a provider chain:
+
+1. **Anna Runtime** (primary) — the host LLM, billed against Anna credits.
+2. **Cline API** (backup) — [Cline's OpenAI-compatible Chat Completions API](https://docs.cline.bot/api/getting-started) at `https://api.cline.bot/api/v1`.
+
+The backup stays enabled by default through the Executa proxy (`llm.complete`
+on the bundled `earth-data` tool), which holds `CLINE_API_KEY` in the runner
+environment so the secret never reaches the browser bundle. When the runner
+has no key the proxy reports `not_configured` and the UI skips that hop
+cleanly. A direct browser transport exists for local/dev only
+(`VITE_CLINE_DIRECT=true` with `VITE_CLINE_API_KEY`; see `.env.example`) —
+note it embeds the key in the bundle, which Cline's docs advise against.
+When the proxy answers, the panel badge switches to "via Cline" and the model
+defaults to Cline's free tier (`minimax/minimax-m2.5`) so the fallback works
+with zero credits. If every provider fails, the error names each attempt —
+including Cline's own `402` when *its* credits run out.
+
 ### Internationalization (i18n)
 
 All UI copy lives in `src/i18n/messages.ts` organized by feature (dashboard, gaiModal, detail, ai, etc.) with full EN/FR/ES translations. Components access translations via the `useLanguage()` hook, which provides a `t(key, vars?)` helper and language switching with localStorage persistence ("lumi-workbench-lang" key).
@@ -212,7 +233,21 @@ The `WorldMap` component renders an interactive Leaflet map with:
 
 ### Styling & Design System
 
-CSS custom properties (`--canvas-deep`, `--accent-purple`, `--line-hairline`, etc.) defined in `index.css` provide the design system foundation. Tailwind utilities handle layout and responsive design; bespoke CSS selectors manage animations (pulse rings, earth video parallax, etc.) and theme effects (blur, opacity, gradient overlays).
+`src/index.css` is the design-system foundation:
+
+- **Tokens** — bespoke observatory tokens (`--canvas-*`, `--accent-*`, `--text-*`, `--domain-*`, `--space-*`, `--fs-*`) plus a complete shadcn/ui token layer (`--background`, `--card`, `--primary`, `--border`, `--radius`, `--shadow-card`, …). Without that layer `bg-card`, `border-border`, `rounded-lg` and similar utilities resolved to undefined values, which is why components in `src/components/ui` previously could not be used.
+- **Shared surfaces** — `.glass-panel` and the `.detail-*` classes define the glass treatment once instead of the `rgba(32,35,45,.65)` + `blur(20px)` recipe being copy-pasted into every panel.
+- **Accessibility** — a `.skip-link`, a global `:focus-visible` ring, WCAG-AA text contrast, and a `prefers-reduced-motion` block that disables the parallax, reveal animations and shimmer.
+- **Non-colour encoding** — severity carries a glyph and tick count, domain cards carry a band dot plus an always-visible accent rail, and the map keys marker *size* to severity (with a legend rendered by `MapOverlays`).
+- **Responsive** — 1280 / 1120 / 960 / 767 / 380 px breakpoints with a 320 px minimum layout. Below 767 px the domain strip becomes a scroll-snap rail and the event feed moves into a bottom-sheet drawer.
+
+Domain colours, icons, weights, severity bands and Global Anomaly Index thresholds live in **`src/lib/domain-theme.ts`**, which is the single source of truth for the map, feed, strip, dialogs and the methodology modal.
+
+### Map Layers
+
+- **Basemap** — free, keyless raster tiles (the previous CARTO default now needs an API key on newer accounts). The default is Esri's World Dark Gray Canvas, which is already dark; `osm` and `carto` variants live in the `BASEMAPS` constant in `WorldMap.tsx` and can be swapped by changing one value. Light tiles are inverted in CSS so the map still matches the dark shell.
+- **Markers** — diameter encodes a 1–5 severity proxy, a translucent halo replaces the hard border, and low-severity events recede so dense clusters stay readable.
+- **Space weather** — SWPC episodes are global phenomena with no coordinates, so they render as a band across the top of the map rather than as markers.
 
 ### Performance & Offline Mode
 
