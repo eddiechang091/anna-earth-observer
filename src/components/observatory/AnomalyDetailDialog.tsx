@@ -9,6 +9,10 @@ import {
 import { useLanguage } from '@/i18n/LanguageContext';
 import type { CanonicalEvent, SpaceWeatherEpisode } from '@/types/earth-data';
 import { SEVERITY, domainColor, prioritySeverity, withAlpha } from '@/lib/domain-theme';
+import {
+  resolveSourceLink,
+  type EonetSourceRecord,
+} from '@/lib/event-source';
 
 const SOURCE_NAMES: Record<string, string> = {
   usgs:  'USGS Earthquake Hazards Program',
@@ -88,6 +92,14 @@ export const AnomalyDetailDialog: React.FC<Props> = ({ event, open, onClose }) =
     : t(`dashboard.domains.${event.domain}`) || event.domain;
 
   const severity = isSpace ? spaceSeverity(event.severity) : SEVERITY[prioritySeverity(event.priority)];
+
+  const sourceLink = isSpace
+    ? resolveSourceLink('swpc', null, null, event.sourceMessages)
+    : resolveSourceLink(
+        event.source,
+        event.extra?.link,
+        event.extra?.sources as EonetSourceRecord[] | undefined,
+      );
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
@@ -170,19 +182,17 @@ export const AnomalyDetailDialog: React.FC<Props> = ({ event, open, onClose }) =
             )}
         </div>
 
-        {'extra' in event && event.extra?.link && (
-          <div className="detail-source">
-            <a
-              className="detail-source__link"
-              style={{ '--link-color': color } as React.CSSProperties}
-              href={event.extra.link}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {t('dashboard.detail.viewSource')} ↗
-            </a>
-          </div>
-        )}
+        <div className="detail-source">
+          <a
+            className="detail-source__link"
+            style={{ '--link-color': color } as React.CSSProperties}
+            href={sourceLink}
+            target="_blank"
+            rel="noopener noreferrer"
+          >
+            {t('dashboard.detail.viewSource')} ↗
+          </a>
+        </div>
       </DialogContent>
     </Dialog>
   );
