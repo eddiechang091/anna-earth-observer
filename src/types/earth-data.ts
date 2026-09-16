@@ -38,6 +38,8 @@ export interface AnomalyEvent {
     velocity?: number;
     lastObserved?: string;
     link?: string;
+    /** Raw `sources[]` records carried by the EONET API for one event. */
+    sources?: { id?: string; url?: string }[];
   };
 }
 

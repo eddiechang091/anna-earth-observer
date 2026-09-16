@@ -273,6 +273,13 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
       const id      = String(e['id'] ?? title);
       const hash    = seedHash(id);
       const type    = catName.toLowerCase().replace(/\s+/g, '_');
+      const link    = String(e['link'] ?? `https://eonet.gsfc.nasa.gov/api/v3/events/${id}`);
+      const sources = Array.isArray(e['sources'])
+        ? (e['sources'] as { id?: string; url?: string }[]).map((s) => ({
+            id: typeof s?.id === 'string' ? s.id : undefined,
+            url: typeof s?.url === 'string' ? s.url : undefined,
+          }))
+        : [];
       eonetRaw.push({
         id, name: title, region: title,
         domain: DOMAIN_MAP[type] ?? 'wildfire',
@@ -286,7 +293,7 @@ async function fetchDirect(): Promise<CanonicalDataResult> {
         coordinates: [Math.round((coords2d[0] ?? 0) * 1e4) / 1e4, Math.round((coords2d[1] ?? 0) * 1e4) / 1e4],
         sourceRecordIds: [id], sourceCount: 1,
         deduplicationKey: `${type}:${Math.round((coords2d[1] ?? 0) * 10) / 10}:${Math.round((coords2d[0] ?? 0) * 10) / 10}`,
-        extra: { lastObserved: lastDate, link: `https://eonet.gsfc.nasa.gov/events/${id}` },
+        extra: { lastObserved: lastDate, link, sources },
         avatars: [{ text: avLabels[Math.abs(hash) % avLabels.length], bgClass: avClasses[Math.abs(hash) % avClasses.length] }],
       });
     }

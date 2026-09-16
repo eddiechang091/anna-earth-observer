@@ -23,6 +23,15 @@ export interface EonetSourceRecord {
   url?: string;
 }
 
+/** SWPC bulletin categories that already resolve to a public product page. */
+export const SWPC_PRODUCT_PAGES: Record<string, string> = {
+  WATA: 'https://www.swpc.noaa.gov/products/warnings-and-watches',
+  WARS: 'https://www.swpc.noaa.gov/products/warnings-and-watches',
+  WARK: 'https://www.swpc.noaa.gov/products/notifications-timeline',
+  ALTK: 'https://www.swpc.noaa.gov/products/notifications-timeline',
+  ALTE: 'https://www.swpc.noaa.gov/products/notifications-timeline',
+};
+
 /** Verified entry points per source; deep links are preferred where they exist. */
 export const SOURCE_PORTALS: Record<EventSource, { label: string; url: string }> = {
   usgs: { label: 'USGS Earthquake Hazards Program', url: 'https://earthquake.usgs.gov/' },
@@ -41,12 +50,16 @@ export const SOURCE_PORTALS: Record<EventSource, { label: string; url: string }>
  * 2. The first usable `sources[].url` from the EONET record (e.g. JTWC cyclone
  *    products, NHC advisories) — when present these are the most specific
  *    human-readable pages available.
- * 3. The verified source portal from {@link SOURCE_PORTALS}.
+ * 3. A product page matched from SWPC bulletin categories
+ *    (`swpcProductIds`), or the first bulletin id carried by a space-weather
+ *    episode (`sourceMessages`).
+ * 4. The verified source portal from {@link SOURCE_PORTALS}.
  */
 export function resolveSourceLink(
   source: EventSource,
   eventLink?: string | null,
   eonetSources?: EonetSourceRecord[] | null,
+  swpcProductIds?: string[] | null,
 ): string {
   const fallback = SOURCE_PORTALS[source]?.url ?? SOURCE_PORTALS.eonet.url;
   const usable = (candidate: string | null | undefined): string | null => {
@@ -56,6 +69,9 @@ export function resolveSourceLink(
     // Retired EONET web viewer: /events/{id} 404s. The sibling /api/v3/*
     // records stay usable, so only filter the human-viewer path shape.
     if (/^https?:\/\/eonet\.gsfc\.nasa\.gov\/events\//i.test(trimmed)) return null;
+    // GDACS per-event report.aspx links 302 back to the alerts overview, so
+    // retire them to the portal fallback below.
+    if (/^https?:\/\/(www\.)?gdacs\.org\/report\.aspx/i.test(trimmed)) return null;
     return trimmed;
   };
 
@@ -66,6 +82,14 @@ export function resolveSourceLink(
     for (const record of eonetSources) {
       const candidate = usable(record?.url);
       if (candidate) return candidate;
+    }
+  }
+
+  if (Array.isArray(swpcProductIds)) {
+    for (const productId of swpcProductIds) {
+      const prefix = String(productId ?? '').replace(/^swpc_/, '').slice(0, 4).toUpperCase();
+      const page = SWPC_PRODUCT_PAGES[prefix];
+      if (page) return page;
     }
   }
 
