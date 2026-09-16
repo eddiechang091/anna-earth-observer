@@ -4,25 +4,27 @@ import {
   clineConfigured,
   type LlmProviderId,
 } from '@/lib/llm';
-import type { CanonicalDataResult, AIAssessment, AITone } from '@/types/earth-data';
+import {
+  assessmentCacheKey,
+  buildToneSectionRequests,
+  type ToneSectionRequest,
+} from '@/lib/ai-tones';
+import { clineMaxTokens } from '@/lib/llm';
+import type {
+  CanonicalDataResult,
+  AIAssessment,
+  AISection,
+  AITone,
+} from '@/types/earth-data';
 import type { Lang } from '@/i18n/messages';
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-// ─── Type definitions ─────────────────────────────────────────────────────────
-
-type SectionRequest = {
-  id: string;
-  label: string;
-  prompt: string;
-  parseAs: 'text' | 'bullets';
-};
-
 // ─── Prompt ───────────────────────────────────────────────────────────────────
-// Prompts for LLM section generation are built dynamically in buildSectionRequests()
-// based on the selected tone, providing guidelines on accuracy and terminology.
+// Tone-specific prompts live in `src/lib/ai-tones.ts` next to the layout that
+// renders their answers, so prompts and presentation stay in lockstep.
 
 // ─── Data serialisation ───────────────────────────────────────────────────────
 
@@ -110,19 +112,14 @@ function buildUserMessage(data: CanonicalDataResult): string {
   });
 }
 
-/** One LLM section result, plus which provider answered it. */
-type SectionResult = {
-  text: string;
-  provider: LlmProviderId | null;
-  error: string | null;
-};
+// ─── Section transport ───────────────────────────────────────────────────────
 
 /**
  * Generates one section through the provider chain (Anna primary, Cline
- * backup). Never throws: failures are returned so the caller can surface the
- * reason while still rendering sections that did succeed.
+ * backup). Never throws: failures are returned so the caller can still render
+ * the sections that did succeed and report the reason separately.
  */
-async function requestSectionFromLLM(request: SectionRequest): Promise<SectionResult> {
+async function requestSectionFromLLM(request: ToneSectionRequest): Promise<AISection & { provider: LlmProviderId | null; error: string | null }> {
   try {
     const response = await completeWithFallback({
       messages: [
@@ -131,94 +128,50 @@ async function requestSectionFromLLM(request: SectionRequest): Promise<SectionRe
           content: { type: 'text', text: request.prompt },
         },
       ],
-      maxTokens: 150,
-      temperature: 0.3,
+      // Generous by design: reasoning models (Cline's free default) spend
+      // thousands of tokens thinking before the visible answer.
+      maxTokens: clineMaxTokens(),
+      temperature: request.temperature,
     });
 
-    return { text: response.text.trim(), provider: response.provider, error: null };
+    const text = response.text.trim();
+    return {
+      id: request.id,
+      parseAs: request.parseAs,
+      content: text,
+      ok: text.length > 0,
+      provider: response.provider,
+      error: null,
+    };
   } catch (err) {
     const error = errorMessage(err);
     console.warn(`[AI Assessment] Failed to fetch section ${request.id}:`, error);
-    return { text: '', provider: null, error };
+    return { id: request.id, parseAs: request.parseAs, content: '', ok: false, provider: null, error };
   }
 }
 
-type SectionResponse = {
-  id: string;
-  label: string;
-  content: string;
-  parseAs: 'text' | 'bullets';
-};
-
-// ─── Helper functions ─────────────────────────────────────────────────────────
-
-function buildCompactFallbackMessage(data: CanonicalDataResult): string {
-  return buildUserMessage(data);
-}
-
-function buildSectionRequests(tone: AITone, _lang: Lang, compactData: string): SectionRequest[] {
-  const toneDesc = {
-    scientific: 'scientific and precise, avoiding jargon',
-    accessible: 'clear and accessible to a general audience',
-    technical: 'detailed and technical for specialists',
-  }[tone] || 'factual';
-
-  return [
-    {
-      id: 'situation',
-      label: 'Situation Assessment',
-      prompt: `You are a global earth event analyst. Analyze the following data and provide a brief situation assessment in ${toneDesc} language:\n\n${compactData}`,
-      parseAs: 'text',
-    },
-    {
-      id: 'observations',
-      label: 'Key Observations',
-      prompt: `Based on the data below, list the top 3-5 most significant current developments. Use bullet points. Write in ${toneDesc} language:\n\n${compactData}`,
-      parseAs: 'bullets',
-    },
-    {
-      id: 'connections',
-      label: 'Cross-Domain Observations',
-      prompt: `Identify any correlational patterns across different domains (e.g., multiple domains showing elevated activity). Write in ${toneDesc} language. Do NOT claim causation:\n\n${compactData}`,
-      parseAs: 'text',
-    },
-    {
-      id: 'watch',
-      label: 'Monitoring Priorities',
-      prompt: `What should operators watch for in the coming hours based on current trends? Use bullet points. Write in ${toneDesc} language:\n\n${compactData}`,
-      parseAs: 'bullets',
-    },
-  ];
-}
-
+/**
+ * Sends every section prompt of one tone concurrently and preserves blueprint
+ * order in the result.
+ */
 async function generateMultiSectionAssessment(
   tone: AITone,
   lang: Lang,
   compactData: string,
-): Promise<{ sections: SectionResponse[]; providers: LlmProviderId[]; lastError: string | null }> {
-  const requests = buildSectionRequests(tone, lang, compactData);
+): Promise<{ sections: AISection[]; providers: LlmProviderId[]; lastError: string | null }> {
+  const requests = buildToneSectionRequests(tone, lang, compactData);
 
-  // Send all requests concurrently
-  const results = await Promise.all(
-    requests.map(async (req) => {
-      const result = await requestSectionFromLLM(req);
-      return {
-        section: {
-          id: req.id,
-          label: req.label,
-          content: result.text || `(Unable to generate ${req.label.toLowerCase()})`,
-          parseAs: req.parseAs,
-        },
-        provider: result.provider,
-        error: result.error,
-      };
-    }),
-  );
+  const results = await Promise.all(requests.map(requestSectionFromLLM));
 
-  // Preserve ordering of the declared sections.
-  const sections = requests.map(
-    (req) => results.find((r) => r.section.id === req.id)!.section,
-  );
+  const sections: AISection[] = requests.map((req) => {
+    const hit = results.find((r) => r.id === req.id);
+    return {
+      id: req.id,
+      parseAs: req.parseAs,
+      content: hit?.content ?? '',
+      ok: hit?.ok ?? false,
+    };
+  });
 
   const providers = [...new Set(
     results.map((r) => r.provider).filter((p): p is LlmProviderId => p !== null),
@@ -229,44 +182,17 @@ async function generateMultiSectionAssessment(
   return { sections, providers, lastError };
 }
 
-// ─── JSON parse with fence stripping ─────────────────────────────────────────
+/** Result of one full tone round-trip (all sections + provenance). */
+type SectionRoundTrip = Awaited<ReturnType<typeof generateMultiSectionAssessment>>;
 
-function buildProseAssessment(sections: SectionResponse[]): AIAssessment {
-  const rawText = sections.map(s => `${s.label}:\n${s.content}`).join('\n\n');
-  
-  // Extract content from sections
-  const situation = sections.find(s => s.id === 'situation')?.content || '';
-  const observationContent = sections.find(s => s.id === 'observations')?.content || '';
-  const connectionsContent = sections.find(s => s.id === 'connections')?.content || '';
-  const watchContent = sections.find(s => s.id === 'watch')?.content || '';
-
-  function parseBullets(raw: string): string[] {
-    return raw.split('\n')
-      .map(l => l.replace(/^[-•*]\s*/, '').trim())
-      .filter(l => l.length > 0);
-  }
-
+/** Wraps a section set into the assessment record the panel renders. */
+function buildAssessment(tone: AITone, lang: Lang, sections: AISection[]): AIAssessment {
   return {
     generatedAt: new Date().toISOString(),
-    displayMode: 'structured',
-    rawText: rawText,
-    executiveSummary: situation,
-    topDevelopments: parseBullets(observationContent).map((line, i) => ({
-      rank: i + 1,
-      eventId: '',
-      title: line.split(' — ')[0].trim(),
-      domain: 'earthquake',
-      importance: 'moderate' as const,
-      whyImportant: line.split(' — ').slice(1).join(' — ').trim() || line,
-      evidence: [],
-      trend: 'uncertain' as const,
-      confidence: 'moderate' as const,
-    })),
-    crossDomainObservations: connectionsContent ? [connectionsContent] : [],
-    dataQualityWarnings: [],
-    keyUncertainties: [],
-    analystPriorities: parseBullets(watchContent),
-    sections: sections,
+    tone,
+    lang,
+    sections,
+    rawText: sections.map((s) => `${s.id}:\n${s.content}`).join('\n\n'),
   };
 }
 
@@ -280,8 +206,16 @@ export interface UseAIAssessmentReturn {
   unavailable: boolean;
   /** Providers that actually answered, in order of first success. */
   providers: LlmProviderId[];
-  generate: () => Promise<void>;
+  /**
+   * Generates the current tone/language. Cached responses are reused, so
+   * switching back to a tone already seen is instant. Pass `true` to force a
+   * fresh LLM round-trip (the panel's Refresh button).
+   */
+  generate: (force?: boolean) => Promise<void>;
 }
+
+/** Bounded response cache so a long session cannot grow without limit. */
+const MAX_CACHED_RESPONSES = 24;
 
 export function useAIAssessment(
   data: CanonicalDataResult | null,
@@ -294,55 +228,123 @@ export function useAIAssessment(
   const [unavailable, setUnavailable] = useState(false);
   const [providers, setProviders]   = useState<LlmProviderId[]>([]);
   const lastFetchRef = useRef<string>('');
-  const lastToneRef = useRef<AITone>('scientific');
-  const lastLangRef = useRef<Lang>('en');
+  const lastToneRef = useRef<AITone>(tone);
+  const lastLangRef = useRef<Lang>(lang);
 
-  const generate = useCallback(async () => {
-    if (!data || data.canonicalEvents.length === 0) return;
+  // The latest tone/language, readable from any callback without making
+  // `generate` a new function on every render. A stale closure here is what
+  // previously regenerated with the *previous* tone after a tone switch.
+  const toneRef = useRef<AITone>(tone);
+  const langRef = useRef<Lang>(lang);
+  toneRef.current = tone;
+  langRef.current = lang;
+
+  const cacheRef = useRef<Map<string, AIAssessment>>(new Map());
+  /** Prompts already in flight, keyed like the cache, so a rapid tone switch
+   *  (or a refresh landing on the same key) reuses one round of LLM calls. */
+  const inflightRef = useRef<Map<string, Promise<SectionRoundTrip>>>(new Map());
+  const seqRef = useRef(0);
+
+  const generate = useCallback(async (force = false) => {
+    const requestTone = toneRef.current;
+    const requestLang = langRef.current;
+    if (!data) return;
+    if (data.canonicalEvents.length === 0 && data.spaceWeatherEpisodes.length === 0) return;
+
+    const key = assessmentCacheKey(requestTone, requestLang, data.fetchedAt);
+
+    if (!force) {
+      const cached = cacheRef.current.get(key);
+      if (cached) {
+        setAssessment(cached);
+        setError(null);
+        setUnavailable(false);
+        setLoading(false);
+        return;
+      }
+    }
+
+    const seq = seqRef.current + 1;
+    seqRef.current = seq;
+    /** True while this request is still the newest one for the shown tone. */
+    const isCurrent = () =>
+      seqRef.current === seq &&
+      toneRef.current === requestTone &&
+      langRef.current === requestLang;
+
     setLoading(true);
     setError(null);
+    // Drop content belonging to another tone/language: the layout is about to
+    // change, so showing the previous tone's prose would be misleading.
+    setAssessment((prev) =>
+      prev && prev.tone === requestTone && prev.lang === requestLang ? prev : null,
+    );
+
     try {
-      const compactData = buildCompactFallbackMessage(data);
+      const compactData = buildUserMessage(data);
 
       // Targeted prompts in parallel. The provider chain (Anna → Cline) is
       // resolved per request, so an exhausted credit balance or a missing
       // runtime degrades to the backup instead of leaving the panel empty.
-      const { sections, providers: used, lastError } =
-        await generateMultiSectionAssessment(tone, lang, compactData);
+      // Requests for the same tone/language/dataset are shared rather than
+      // duplicated when the user toggles tones faster than the model answers.
+      let pending = inflightRef.current.get(key);
+      if (!pending) {
+        pending = generateMultiSectionAssessment(requestTone, requestLang, compactData);
+        inflightRef.current.set(key, pending);
+        const clear = () => inflightRef.current.delete(key);
+        pending.then(clear, clear);
+      }
+      const { sections, providers: used, lastError } = await pending;
 
-      setProviders(used);
+      const allFailed = sections.length === 0 || sections.every((s) => !s.ok);
 
-      const allEmpty = sections.length === 0
-        || sections.every(s => s.content.includes('Unable to generate'));
-
-      if (allEmpty) {
-        setAssessment(null);
-        setUnavailable(true);
-        setError(lastError ?? 'No LLM provider returned a response for any section.');
+      if (allFailed) {
+        if (isCurrent()) {
+          setProviders(used);
+          setAssessment(null);
+          setUnavailable(true);
+          setError(lastError ?? 'No LLM provider returned a response for any section.');
+        }
         return;
       }
 
-      setAssessment(buildProseAssessment(sections));
+      const result = buildAssessment(requestTone, requestLang, sections);
+      cacheRef.current.set(key, result);
+      if (cacheRef.current.size > MAX_CACHED_RESPONSES) {
+        const oldest = cacheRef.current.keys().next().value;
+        if (oldest !== undefined) cacheRef.current.delete(oldest);
+      }
+
+      if (!isCurrent()) return;
+      setProviders(used);
+      setAssessment(result);
       setUnavailable(false);
       setError(null);
     } catch (e) {
+      if (!isCurrent()) return;
       setUnavailable(!clineConfigured());
       setError(e instanceof Error ? e.message : 'Assessment generation failed.');
     } finally {
-      setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [data]);
 
-  // Auto-generate whenever new data arrives (new fetchedAt)
+  // Auto-generate whenever new data arrives (new fetchedAt).
   useEffect(() => {
     if (!data) return;
     if (data.fetchedAt === lastFetchRef.current) return;
     if (data.canonicalEvents.length === 0 && data.spaceWeatherEpisodes.length === 0) return;
     lastFetchRef.current = data.fetchedAt;
+    lastToneRef.current = toneRef.current;
+    lastLangRef.current = langRef.current;
+    // A new dataset invalidates every cached tone.
+    cacheRef.current.clear();
     generate();
-  }, [data?.fetchedAt, generate]);
+  }, [data, generate]);
 
-  // Regenerate when tone changes even if fetchedAt is unchanged.
+  // Regenerate when the tone changes even if fetchedAt is unchanged. Tones the
+  // user already visited are restored from cache without an LLM round-trip.
   useEffect(() => {
     if (!data) return;
     if (lastToneRef.current === tone) return;
@@ -350,7 +352,7 @@ export function useAIAssessment(
     generate();
   }, [tone, data, generate]);
 
-  // Regenerate when language changes to get response in new language
+  // Regenerate when the language changes so the answer arrives translated.
   useEffect(() => {
     if (!data) return;
     if (lastLangRef.current === lang) return;

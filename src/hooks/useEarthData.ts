@@ -5,7 +5,7 @@ import type {
   DomainScore, ISStelemetry, DataSourceHealth, EventDomain, Priority,
 } from '@/types/earth-data';
 
-const REFRESH_MS = 5 * 60 * 1000;
+const REFRESH_MS = 20 * 60 * 1000;
 
 const WEIGHTS: Record<EventDomain, number> = {
   earthquake: 0.20, wildfire: 0.15, storm: 0.18, flood: 0.15, volcano: 0.07, ice: 0.05, space_weather: 0.20,

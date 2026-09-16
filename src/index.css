@@ -997,8 +997,13 @@ body {
 .feed-pagination__btn:disabled { opacity: 0.4; cursor: default; }
 .feed-pagination__info { font-size: 11px; color: var(--text-muted); font-weight: 500; letter-spacing: 0.03em; min-width: 80px; text-align: center; }
 
-/* AI Insights — the tone now only tints an accent rail instead of repainting
-   the whole surface, so switching tone no longer changes the product's skin. */
+/* ══ AI Insights ══════════════════════════════════════════════════════════
+   One panel, six reading tones. The tone only tints the rail and the panel
+   wash — the outer card keeps the product's glass surface, so switching tone
+   never repaints the app skin. The response area below is re-shaped by the
+   tone-specific layout classes (.ai-sci, .ai-play, .ai-haha, .ai-kids,
+   .ai-coach, .ai-alert).
+   Accent values mirror TONE_META in src/lib/ai-tones.ts. */
 .ai-insights {
   position: relative;
   overflow: hidden;
@@ -1022,12 +1027,64 @@ body {
   background: var(--tone-accent, var(--accent-purple));
   opacity: 0.9;
 }
+
+/* Per-tone wash + tint tokens consumed by the layouts below. */
+.ai-insights--scientific { --tone-tint: rgba(94,234,212,0.10); --tone-tint-soft: rgba(94,234,212,0.04); background-image: linear-gradient(160deg, var(--tone-tint), transparent 58%); }
+.ai-insights--playful    { --tone-tint: rgba(167,139,250,0.16); --tone-tint-soft: rgba(236,72,153,0.07); background-image: linear-gradient(140deg, var(--tone-tint), var(--tone-tint-soft) 65%, transparent); }
+.ai-insights--hilarious  { --tone-tint: rgba(251,113,133,0.14); --tone-tint-soft: rgba(251,113,133,0.05); background-image: linear-gradient(120deg, var(--tone-tint), transparent 62%); }
+.ai-insights--kids       { --tone-tint: rgba(252,211,77,0.13); --tone-tint-soft: rgba(56,189,248,0.08); background-image: linear-gradient(150deg, var(--tone-tint), var(--tone-tint-soft) 70%, transparent); }
+.ai-insights--coach      { --tone-tint: rgba(74,222,128,0.13); --tone-tint-soft: rgba(74,222,128,0.04); background-image: linear-gradient(150deg, var(--tone-tint), transparent 60%); }
+.ai-insights--alert      { --tone-tint: rgba(255,91,102,0.18); --tone-tint-soft: rgba(255,91,102,0.06); background-image: linear-gradient(120deg, var(--tone-tint), transparent 55%); }
 .ai-insights__header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; gap: 16px; }
 .ai-insights__title { margin: 0 0 3px; font-size: 16px; font-weight: 600; letter-spacing: -0.01em; }
 .ai-insights__sub { margin: 0; font-size: 11px; color: var(--text-muted); }
 .ai-refresh-btn { appearance: none; border: 1px solid var(--line-hairline); background: rgba(255,255,255,0.05); color: var(--text-secondary); font-family: inherit; font-size: 12px; font-weight: 500; padding: 7px 14px; border-radius: 10px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 160ms ease; white-space: nowrap; flex-shrink: 0; }
 .ai-refresh-btn:hover { background: rgba(255,255,255,0.1); color: var(--text-primary); }
 .ai-refresh-btn:disabled { opacity: 0.5; cursor: default; }
+.ai-refresh-btn:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: 2px; }
+.ai-refresh-btn__icon { display: inline-block; line-height: 1; font-size: 13px; }
+
+/* ── Tone picker: a radio group of chips, one accent per tone ───────────── */
+.ai-tone-picker { display: flex; flex-direction: column; gap: 6px; }
+.ai-tone-picker__label { font-size: var(--fs-micro); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+.ai-tone-bar { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+
+.ai-tone-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--line-hairline);
+  border-radius: 999px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease, border-color 160ms ease;
+}
+
+.ai-tone-chip:hover { background: rgba(255,255,255,0.09); color: var(--text-primary); }
+.ai-tone-chip:focus-visible { outline: 2px solid var(--focus-ring-color); outline-offset: 2px; }
+.ai-tone-chip__icon { font-size: 12px; line-height: 1; color: var(--chip-accent); }
+
+/* The active chip carries its own accent as colour + tint + border, so the
+   selected tone is never signalled by colour alone (WCAG 1.4.1). */
+.ai-tone-chip--active {
+  color: var(--chip-accent);
+  background: var(--chip-tint, rgba(255,255,255,0.08));
+  border-color: var(--chip-accent);
+}
+.ai-tone-chip--active .ai-tone-chip__text { text-decoration: underline; text-underline-offset: 3px; }
+
+.ai-insights__tagline { margin: var(--space-2) 0 0; font-size: var(--fs-small); font-weight: 500; color: var(--tone-accent, var(--accent-purple)); }
+
+/* ── Footer meta chips ─────────────────────────────────────────────────── */
+.ai-insights__meta { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-top: var(--space-4); padding-top: var(--space-3); border-top: 1px solid var(--line-hairline); }
+.ai-meta-chip { font-size: var(--fs-micro); font-weight: 500; letter-spacing: 0.03em; color: var(--text-muted); background: rgba(255,255,255,0.04); border: 1px solid var(--line-hairline); border-radius: 999px; padding: 3px 10px; }
+.ai-insights__status { margin: var(--space-3) 0 0; font-size: var(--fs-small); color: var(--text-muted); font-style: italic; }
 .ai-loading { display: flex; flex-direction: column; gap: 8px; padding: 6px 0; }
 .ai-skeleton { height: 12px; border-radius: 6px; background: rgba(255,255,255,0.06); animation: skeleton-pulse 1.6s ease-in-out infinite; }
 .ai-skeleton--wide { width: 100%; } .ai-skeleton--medium { width: 72%; } .ai-skeleton--narrow { width: 48%; }
@@ -1039,17 +1096,72 @@ body {
 .ai-unavailable p { margin: 0; color: var(--text-muted); line-height: 1.5; }
 .ai-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 10px; font-size: 12px; color: #fca5a5; }
 .ai-error button { appearance: none; border: 1px solid rgba(239,68,68,0.3); background: transparent; color: #fca5a5; font-family: inherit; font-size: 11px; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
-.ai-summary { margin: 0 0 14px; font-size: 14px; line-height: 1.6; color: var(--text-primary); }
-.ai-bullets { list-style: none; padding: 0; margin: 0 0 14px; display: flex; flex-direction: column; gap: 8px; }
-.ai-bullet { border-left: 3px solid; padding: 8px 12px; background: rgba(255,255,255,0.03); border-radius: 0 8px 8px 0; }
-.ai-bullet__meta { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.05em; }
-.ai-bullet__rank { background: rgba(255,255,255,0.08); border-radius: 4px; padding: 0 4px; }
-.ai-bullet__domain { text-transform: capitalize; }
-.ai-bullet__importance { text-transform: uppercase; font-size: 10px; }
-.ai-bullet__text { margin: 0; font-size: 13px; line-height: 1.55; color: var(--text-secondary); }
-.ai-expand-btn { appearance: none; border: 1px solid var(--line-hairline); background: rgba(255,255,255,0.04); color: var(--text-muted); font-family: inherit; font-size: 12px; font-weight: 500; padding: 7px 14px; border-radius: 10px; cursor: pointer; transition: all 160ms ease; display: inline-flex; align-items: center; gap: 5px; }
-.ai-expand-btn:hover { background: rgba(255,255,255,0.08); color: var(--text-primary); }
-.ai-full-assessment { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line-hairline); }
+/* ── Response area: shared section primitives ──────────────────────────── */
+.ai-insights__body { margin-top: var(--space-4); }
+.ai-layout { display: flex; flex-direction: column; }
+.ai-section-line { display: flex; align-items: flex-start; gap: 8px; }
+.ai-section-marker { flex-shrink: 0; }
+.ai-section-missing { margin: 0; font-size: var(--fs-small); color: var(--text-muted); font-style: italic; }
+
+/* ── Scientific: a numbered dossier with ruled headings ─────────────────── */
+.ai-sci { gap: var(--space-4); }
+.ai-sci__block { padding-left: var(--space-4); border-left: 1px solid var(--line-hairline); }
+.ai-sci__head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.ai-sci__index { font-size: var(--fs-micro); font-weight: 700; letter-spacing: 0.1em; color: var(--tone-accent); font-variant-numeric: tabular-nums; }
+.ai-sci__title { margin: 0; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.ai-sci__rule { flex: 1; height: 1px; background: linear-gradient(90deg, var(--line-hairline), transparent); }
+.ai-sci__text { margin: 0; font-size: var(--fs-body); line-height: 1.7; color: var(--text-primary); }
+.ai-sci__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-sci__list .ai-section-line { font-size: var(--fs-body); line-height: 1.6; color: var(--text-secondary); }
+.ai-sci__list .ai-section-marker { color: var(--tone-accent); font-weight: 700; }
+
+/* ── Playful: chat bubbles with alternating tails ───────────────────────── */
+.ai-play { gap: var(--space-3); }
+.ai-play__bubble { padding: 12px 16px; border-radius: 18px 18px 18px 4px; background: var(--tone-tint); border: 1px solid rgba(255,255,255,0.1); }
+.ai-play__bubble:nth-child(even) { border-radius: 18px 18px 4px 18px; background: var(--tone-tint-soft); }
+.ai-play__title { margin: 0 0 6px; font-size: var(--fs-body); font-weight: 700; color: var(--tone-accent); }
+.ai-play__text { margin: 0; font-size: var(--fs-lead); line-height: 1.8; color: var(--text-primary); }
+.ai-play__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.ai-play__list .ai-section-line { font-size: var(--fs-lead); line-height: 1.7; color: var(--text-primary); }
+/* ── Hilarious: comedy-club cards with dashed frames ────────────────────── */
+.ai-haha { gap: var(--space-3); }
+.ai-haha__card { padding: 14px 16px; border: 1px dashed rgba(251,113,133,0.4); border-radius: 10px; background: linear-gradient(120deg, rgba(251,113,133,0.08), transparent); }
+.ai-haha__title { display: flex; align-items: center; gap: 8px; margin: 0 0 8px; font-size: var(--fs-small); font-weight: 800; letter-spacing: 0.14em; text-transform: uppercase; color: var(--tone-accent); }
+.ai-haha__text { margin: 0; font-size: var(--fs-lead); line-height: 1.8; color: var(--text-primary); font-style: italic; }
+.ai-haha__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ai-haha__list .ai-section-line { padding: 10px 12px; border-left: 4px solid var(--tone-accent); border-radius: 0 8px 8px 0; background: rgba(255,255,255,0.04); font-size: var(--fs-body); line-height: 1.65; color: var(--text-secondary); }
+
+/* ── Kids: a storybook with wide, soft cards ───────────────────────────── */
+.ai-kids { gap: var(--space-3); }
+.ai-kids__card { padding: 18px 20px; border-radius: 22px; background: linear-gradient(150deg, var(--tone-tint), var(--tone-tint-soft)); border: 1px solid rgba(255,255,255,0.12); }
+.ai-kids__title { margin: 0 0 8px; font-size: var(--fs-title); font-weight: 700; color: var(--tone-accent); }
+.ai-kids__text { margin: 0; font-size: var(--fs-lead); line-height: 2; color: var(--text-primary); }
+.ai-kids__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.ai-kids__list .ai-section-line { font-size: var(--fs-lead); line-height: 1.8; color: var(--text-primary); }
+.ai-kids__list .ai-section-marker { font-size: 15px; }
+/* ── Coach: a training board of numbered steps ──────────────────────────── */
+.ai-coach { gap: var(--space-3); }
+.ai-coach__block { padding: 12px 14px; border-radius: 12px; border: 1px solid var(--line-hairline); border-left: 3px solid var(--tone-accent); background: rgba(255,255,255,0.03); }
+.ai-coach__head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ai-coach__step { display: grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--tone-tint); color: var(--tone-accent); font-size: var(--fs-micro); font-weight: 800; flex-shrink: 0; }
+.ai-coach__title { margin: 0; font-size: var(--fs-body); font-weight: 700; color: var(--text-primary); }
+.ai-coach__text { margin: 0; font-size: var(--fs-body); line-height: 1.7; color: var(--text-secondary); }
+.ai-coach__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-coach__list .ai-section-line { font-size: var(--fs-body); line-height: 1.6; color: var(--text-secondary); }
+.ai-coach__list .ai-section-marker { color: var(--tone-accent); font-weight: 800; }
+
+/* ── Alert: an incident board — banner plus ranked rows ─────────────────── */
+.ai-alert__banner { display: flex; align-items: center; gap: 10px; margin: var(--space-3) 0 0; padding: 10px 14px; border-radius: 10px; background: var(--tone-tint); border: 1px solid rgba(255,91,102,0.45); font-size: var(--fs-small); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--accent-red); }
+.ai-alert__beacon { width: 9px; height: 9px; border-radius: 50%; background: var(--accent-red); box-shadow: 0 0 8px var(--accent-red); flex-shrink: 0; animation: pulse-dot 1.6s ease-in-out infinite; }
+.ai-alert { gap: var(--space-2); }
+.ai-alert__row { display: flex; gap: var(--space-3); padding: 12px 14px; border-radius: 10px; background: linear-gradient(90deg, var(--tone-tint), transparent 70%); border: 1px solid rgba(255,91,102,0.28); }
+.ai-alert__rank { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: rgba(255,91,102,0.2); color: var(--accent-red); font-size: var(--fs-small); font-weight: 800; flex-shrink: 0; }
+.ai-alert__body { flex: 1; min-width: 0; }
+.ai-alert__title { margin: 0 0 6px; font-size: var(--fs-body); font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-primary); }
+.ai-alert__text { margin: 0; font-size: var(--fs-body); line-height: 1.7; color: var(--text-primary); }
+.ai-alert__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.ai-alert__list .ai-section-line { font-size: var(--fs-body); line-height: 1.6; color: var(--text-secondary); }
+.ai-alert__list .ai-section-marker { color: var(--accent-red); }
 
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
@@ -1107,6 +1219,11 @@ body {
   .map-legend { max-width: 180px; padding: 8px 10px; }
   .map-legend__row { gap: 3px 8px; }
   .map-sw-overlay { padding: 6px 10px; }
+  /* Six tone chips would wrap into a tower on a phone: make the rail scroll. */
+  .ai-tone-bar { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+  .ai-tone-bar::-webkit-scrollbar { display: none; }
+  .ai-tone-chip { flex: 0 0 auto; }
+  .ai-insights { padding: var(--space-4); }
 }
 
 /* 320px minimum layout target */

@@ -183,7 +183,7 @@ export const ObservatoryDashboard: React.FC = () => {
             loading={aiLoading}
             error={aiError}
             unavailable={aiUnavailable}
-            onRefresh={aiRefresh}
+            onRefresh={() => { void aiRefresh(true); }}
             tone={aiTone}
             onToneChange={setAiTone}
             domainScores={data.domainScores}

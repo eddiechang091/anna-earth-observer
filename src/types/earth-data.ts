@@ -1,7 +1,17 @@
 // ─── Legacy display types (kept for AnomalyDetailDialog) ───────────────────
 export type Priority      = 'high' | 'medium' | 'low';
 export type EventSource   = 'usgs' | 'eonet' | 'swpc' | 'celestrak' | 'gdacs';
-export type AITone        = 'scientific' | 'accessible' | 'technical';
+/**
+ * Reader tone for the AI insights panel. Each tone drives its own prompt set,
+ * its own response sections and its own panel layout.
+ */
+export type AITone =
+  | 'scientific'
+  | 'playful'
+  | 'hilarious'
+  | 'kids'
+  | 'coach'
+  | 'alert';
 
 export interface AnomalyEvent {
   id: string;
@@ -141,16 +151,27 @@ export interface AITopDevelopment {
   confidence: 'high' | 'moderate' | 'low';
 }
 
+/**
+ * One tone-specific block of the AI response. The prompt that produced it, the
+ * heading shown above it and the layout that frames it all come from the tone
+ * blueprint in `src/lib/ai-tones.ts` — this record only carries the text.
+ */
+export interface AISection {
+  /** Section id from the tone blueprint (e.g. `drivers`). */
+  id: string;
+  content: string;
+  parseAs: 'text' | 'bullets';
+  /** False when no provider could answer this section. */
+  ok: boolean;
+}
+
 export interface AIAssessment {
   generatedAt: string;
-  executiveSummary: string;
-  topDevelopments: AITopDevelopment[];
-  crossDomainObservations: string[];
-  dataQualityWarnings: string[];
-  keyUncertainties: string[];
-  analystPriorities: string[];
-  displayMode?: 'structured';
-  rawText?: string;
-  sections?: Array<{ id: string; label: string; content: string; parseAs: 'text' | 'bullets' }>;
+  /** Tone + language that produced this response (drives headings and layout). */
+  tone: AITone;
+  lang: string;
+  sections: AISection[];
+  /** Every section concatenated — used for copy/export and debugging. */
+  rawText: string;
 }
 
