@@ -27,5 +27,4 @@ coverage/
 
 # Temporary QA manifests
 manifest.qa-*.json
-
-/__pycache__/*.pyc
+__pycache__/

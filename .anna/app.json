@@ -1,0 +1,7 @@
+{
+  "$schema": "anna-app-identity/v1",
+  "host": "https://anna.partners",
+  "app_id": 273,
+  "slug": "earth-anomaly-observatory",
+  "first_published_at": "2026-09-10T17:50:15.441Z"
+}

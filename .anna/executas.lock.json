@@ -1,0 +1,11 @@
+{
+  "$schema": "anna-executas-lock/v1",
+  "host": "https://anna.partners",
+  "executas": {
+    "earth-data": {
+      "tool_id": "tool-eddie091-earth-data-ghq33rnq",
+      "path": "./executas/earth-data",
+      "source": "published"
+    }
+  }
+}

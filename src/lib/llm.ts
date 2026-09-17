@@ -37,7 +37,7 @@
  * Docs: https://docs.cline.bot/api/getting-started
  */
 
-import { getAnnaRuntime, getToolId, type LLMMessage } from '@/anna-runtime';
+import { getAnnaRuntime, getToolId, llmContentText, type LLMMessage } from '@/anna-runtime';
 
 export type { LLMMessage };
 
@@ -111,6 +111,14 @@ export function clineMaxTokens(): number {
   const raw = Number.parseInt(env('VITE_CLINE_MAX_TOKENS')?.trim() ?? '', 10);
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_CLINE_MAX_TOKENS;
 }
+
+/**
+ * Host LLM budget for the primary (Anna) provider. The install grant caps a
+ * single `llm.complete` at `quota_caps.max_tokens_per_call` — 4096 here — and
+ * the dispatcher clamps silently. `useAIAssessment` passes the backup's much
+ * larger reasoning budget, so it is clamped before the request goes out.
+ */
+export const ANNA_MAX_TOKENS_CAP = 4096;
 
 /**
  * Same-origin dev-server relay (`vite.config.ts` ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ `/cline-api/*`). It exists
@@ -223,17 +231,36 @@ async function completeViaAnna(params: {
     throw new Error('Anna runtime unavailable (running outside the Anna host).');
   }
 
+  // The dispatcher silently clamps `maxTokens` down to the install grant's
+  // `max_tokens_per_call` (4096 for this app). Asking for the backup's
+  // reasoning-sized budget here buys nothing, so cap it client-side and keep
+  // the reported error honest.
+  const maxTokens = Math.min(params.maxTokens ?? ANNA_MAX_TOKENS_CAP, ANNA_MAX_TOKENS_CAP);
+
   const response = await runtime.llm.complete({
     messages: params.messages,
-    max_tokens: params.maxTokens,
-    temperature: params.temperature,
+    // Documented Host API field. `max_tokens` is the OpenAI/Cline spelling and
+    // is ignored by the dispatcher, which then falls back to its own default.
+    maxTokens,
+    ...(params.temperature !== undefined ? { temperature: params.temperature } : {}),
   });
 
-  const text = typeof response.content === 'string'
-    ? response.content
-    : '';
+  const text = llmContentText(response);
+  if (text.length === 0) {
+    // Empty `content.text` with a successful RPC: the model spent its whole
+    // output budget on hidden reasoning. Throwing lets `completeWithFallback`
+    // move on to the Cline backup instead of rendering a blank section.
+    const usage = (response as { usage?: { outputTokens?: number; totalTokens?: number } }).usage;
+    const spent = usage?.outputTokens ?? usage?.totalTokens;
+    throw new Error(
+      spent === undefined
+        ? 'Anna LLM returned no content.'
+        : `Anna LLM returned no content: the model spent ${spent} of its ${maxTokens}-token budget before answering.`,
+    );
+  }
 
-  return { text, provider: 'anna' };
+  const model = (response as { model?: string }).model;
+  return { text, provider: 'anna', via: 'host', ...(model ? { model } : {}) };
 }
 
 /** OpenAI content parts ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ plain strings, which every compatible API accepts. */
