@@ -16,7 +16,7 @@ import urllib.error
 from datetime import datetime, timezone
 from typing import Any
 
-VERSION = "1.1.0"
+VERSION = "1.1.2"
 TOOL_NAME = "earth-data"
 
 # Public APIs — all support no-auth access.
@@ -25,8 +25,10 @@ EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50&days
 SWPC_URL  = "https://services.swpc.noaa.gov/products/alerts.json"
 ISS_URL   = "https://api.wheretheiss.at/v1/satellites/25544"
 
-# Cline backup API defaults — the bearer token always comes from the runner
-# environment (CLINE_API_KEY), never from invoke args or stdout.
+# Cline backup API defaults. The bearer token arrives as an Agent-injected
+# credential (params.context.credentials["CLINE_API_KEY"], set in Anna's tool
+# credential settings) with a runner-environment fallback for local dev. It is
+# never taken from invoke args and never written to stdout.
 CLINE_DEFAULT_BASE_URL = "https://api.cline.bot/api/v1"
 CLINE_DEFAULT_MODEL = "minimax/minimax-m2.5"
 CLINE_TIMEOUT_SECONDS = 60
@@ -741,18 +743,25 @@ def _valid_message(msg: Any) -> bool:
     )
 
 
-def llm_complete_via_cline(args: dict) -> dict:
+def llm_complete_via_cline(args: dict, credentials: dict | None = None) -> dict:
     """Relay chat completion through Cline server-side.
 
-    Key stays in runner env (CLINE_API_KEY). Never echoes key in response.
+    The key arrives as an Agent-injected credential
+    (params.context.credentials["CLINE_API_KEY"]) or, for local dev, from the
+    runner environment. It is never echoed in the response, never logged, and
+    never taken from tool arguments.
     Raises ClineProxyError with code one of: not_configured, invalid_input,
     cline_rejected, cline_unreachable, cline_bad_response.
     """
-    api_key = (os.environ.get("CLINE_API_KEY") or "").strip()
+    creds = credentials or {}
+    # 1) Agent-injected credential (what Anna's tool credential settings write)
+    # 2) runner-environment fallback, which plugins must own themselves
+    api_key = (creds.get("CLINE_API_KEY") or os.environ.get("CLINE_API_KEY") or "").strip()
     if not api_key:
         raise ClineProxyError(
             "not_configured",
-            "CLINE_API_KEY missing in Executa runner environment.",
+            "CLINE_API_KEY not configured. Add it in this tool's credential "
+            "settings in Anna (or set it in the runner environment for local dev).",
         )
     messages = args.get("messages") if isinstance(args, dict) else None
     if not isinstance(messages, list) or not messages:
@@ -767,8 +776,10 @@ def llm_complete_via_cline(args: dict) -> dict:
         cleaned.append({"role": msg["role"], "content": msg["content"]})
     model = args.get("model")
     if not isinstance(model, str) or not model.strip():
-        model = (os.environ.get("CLINE_MODEL") or "").strip() or CLINE_DEFAULT_MODEL
-    base_url = (os.environ.get("CLINE_BASE_URL")
+        model = ((creds.get("CLINE_MODEL") or os.environ.get("CLINE_MODEL") or "")
+                 .strip() or CLINE_DEFAULT_MODEL)
+    base_url = (creds.get("CLINE_BASE_URL")
+                or os.environ.get("CLINE_BASE_URL")
                 or CLINE_DEFAULT_BASE_URL).strip().rstrip("/")
     payload: dict[str, Any] = {
         "model": model, "messages": cleaned, "stream": False}
@@ -903,7 +914,8 @@ def _handle(msg: dict) -> dict | None:
                         "name": "llm.complete",
                         "description": (
                             "Relays a chat completion through the Cline backup API. "
-                            "Holds the API key server-side from CLINE_API_KEY env. "
+                            "Reads the key from this tool's credential settings in Anna "
+                            "(CLINE_API_KEY), falling back to the runner environment. "
                             "Reports not_configured when the key is absent."
                         ),
                         "parameters": [
@@ -913,6 +925,43 @@ def _handle(msg: dict) -> dict | None:
                             {"name": "temperature", "type": "number", "required": False},
                         ],
                     }
+                ],
+                # Agent-injected credentials. The user types the value once in
+                # Anna's tool credential settings; it is delivered as
+                # params.context.credentials on every invoke and never reaches
+                # the LLM, the transcript, or the UI bundle. Required=False so
+                # the tool stays usable with Anna's own host LLM alone.
+                "credentials": [
+                    {
+                        "name": "CLINE_API_KEY",
+                        "display_name": "Cline API key (backup LLM)",
+                        "description": (
+                            "Optional. Used only when Anna's host LLM is unavailable or "
+                            "out of credits. Create one at https://app.cline.bot -> "
+                            "Settings -> API Keys."
+                        ),
+                        "required": False,
+                        "sensitive": True,
+                    },
+                    {
+                        "name": "CLINE_MODEL",
+                        "display_name": "Cline model",
+                        "description": (
+                            "provider/model-name, e.g. google/gemma-4-31b-it:free. "
+                            "Leave empty for the default."
+                        ),
+                        "required": False,
+                        "sensitive": False,
+                        "default": CLINE_DEFAULT_MODEL,
+                    },
+                    {
+                        "name": "CLINE_BASE_URL",
+                        "display_name": "Cline API base URL",
+                        "description": "Override only when routing through a gateway.",
+                        "required": False,
+                        "sensitive": False,
+                        "default": CLINE_DEFAULT_BASE_URL,
+                    },
                 ],
             },
         }
@@ -926,6 +975,10 @@ def _handle(msg: dict) -> dict | None:
 
     if method == "invoke":
         tool: str = params.get("name") or params.get("tool") or params.get("method", "")
+        # Credentials the Agent injected for this invoke (never LLM-visible).
+        context = params.get("context") if isinstance(params.get("context"), dict) else {}
+        credentials = (context.get("credentials")
+                       if isinstance(context.get("credentials"), dict) else {})
         invoke_args = params.get("args")
         if not isinstance(invoke_args, dict):
             invoke_args = {
@@ -948,7 +1001,7 @@ def _handle(msg: dict) -> dict | None:
                 }
         if tool in {"llm.complete", "llm_complete", "complete"}:
             try:
-                result = llm_complete_via_cline(invoke_args)
+                result = llm_complete_via_cline(invoke_args, credentials)
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
