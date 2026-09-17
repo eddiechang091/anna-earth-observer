@@ -149,8 +149,13 @@ function clineDirectEnabled(): boolean {
   return flag('VITE_CLINE_DIRECT', false);
 }
 
-/** Dev-server relay transport is off unless explicitly enabled. */
+/** Dev-server relay transport is off unless explicitly enabled. The relay is
+ * a Vite dev-server middleware (see `vite.config.ts`) — it does not exist in
+ * the published bundle, so in a production build it must never be selected:
+ * baking it in made every production attempt fetch `/cline-api/*` from the
+ * app host itself and fail with "Cline API 404". */
 function clineRelayEnabled(): boolean {
+  if (!import.meta.env.DEV) return false;
   return flag('VITE_CLINE_RELAY', false);
 }
 
@@ -531,10 +536,11 @@ export async function completeWithFallback(params: {
   }
 
   if (clineBrowserTransport() !== null) {
+    const via = clineBrowserTransport()?.apiKey ? 'direct' : 'relay';
     try {
       return { ...(await completeViaCline(params)), attempts };
     } catch (error) {
-      attempts.push({ provider: 'cline', error: `direct: ${errorMessage(error)}` });
+      attempts.push({ provider: 'cline', error: `${via}: ${errorMessage(error)}` });
     }
   }
 
