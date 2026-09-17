@@ -205,16 +205,20 @@ The `useAIAssessment` hook:
 2. **Cline API** (backup) — [Cline's OpenAI-compatible Chat Completions API](https://docs.cline.bot/api/getting-started) at `https://api.cline.bot/api/v1`.
 
 The backup stays enabled by default through the Executa proxy (`llm.complete`
-on the bundled `earth-data` tool), which holds `CLINE_API_KEY` in the runner
-environment so the secret never reaches the browser bundle. When the runner
-has no key the proxy reports `not_configured` and the UI skips that hop
-cleanly. A direct browser transport exists for local/dev only
-(`VITE_CLINE_DIRECT=true` with `VITE_CLINE_API_KEY`; see `.env.example`) —
-note it embeds the key in the bundle, which Cline's docs advise against.
-When the proxy answers, the panel badge switches to "via Cline" and the model
-defaults to Cline's free tier (`minimax/minimax-m2.5`) so the fallback works
-with zero credits. If every provider fails, the error names each attempt —
-including Cline's own `402` when *its* credits run out.
+on the bundled `earth-data` tool), which gets the key server-side so the secret
+never reaches the browser bundle. Inside Anna the key is stored as a
+**credential on the tool** (`CLINE_API_KEY`, optional; the tool's `describe`
+manifest declares it) and the Agent injects it on every `invoke` as
+`params.context.credentials` — enter it once in the tool's credential settings
+in Anna. Locally the plugin falls back to the runner/dev-server environment
+variable of the same name. When no key is available the proxy reports
+`not_configured` and the UI skips that hop cleanly. A direct browser transport
+exists for local/dev only (`VITE_CLINE_DIRECT=true` with `VITE_CLINE_API_KEY`;
+see `.env.example`) — note it embeds the key in the bundle, which Cline's docs
+advise against. When the proxy answers, the panel badge switches to "via Cline"
+and the model defaults to Cline's free tier (`minimax/minimax-m2.5`) so the
+fallback works with zero credits. If every provider fails, the error names each
+attempt — including Cline's own `402` when *its* credits run out.
 
 ### Internationalization (i18n)
 
