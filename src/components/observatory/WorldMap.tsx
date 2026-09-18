@@ -32,12 +32,11 @@ export { DOMAIN_COLORS };
 /**
  * Basemap catalogue. All of these are free and require **no API key**.
  *
- * - `esri-dark` (default): Esri's World Dark Gray Canvas — already dark, so it
- *   matches the shell with no CSS tricks.
- * - `osm`: the canonical free OpenStreetMap raster tiles. Light, so the CSS
- *   inverts the tile pane to keep the dashboard dark.
- * - `carto`: kept for reference only — newer CARTO accounts require an API
- *   key, which is why it is no longer the default.
+ * - `esri-dark` (default): Esri's World Dark Gray Canvas — matches the dark shell.
+ * - `usgs`: USGS National Map topo — government tiles, no auth, reliable in
+ *   cloud/embedded environments where Esri/CARTO may be blocked.
+ * - `osm`: canonical OpenStreetMap raster tiles (light; CSS inverts it dark).
+ * - `carto`: kept as last resort; may require an API key on newer accounts.
  */
 const BASEMAPS = {
   'esri-dark': {
@@ -46,6 +45,13 @@ const BASEMAPS = {
     maxZoom: 16,
     subdomains: undefined,
     className: '',
+  },
+  usgs: {
+    url: 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSTopo/MapServer/tile/{z}/{y}/{x}',
+    attribution: 'Tiles courtesy of the <a href="https://usgs.gov/">U.S. Geological Survey</a>',
+    maxZoom: 16,
+    subdomains: undefined,
+    className: ' world-map-container--basemap-osm',
   },
   osm: {
     url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
@@ -69,11 +75,10 @@ type BasemapKey = keyof typeof BASEMAPS;
 const ACTIVE_BASEMAP: BasemapKey = 'esri-dark';
 
 /**
- * Host order used when tiles stop arriving. `esri-dark` is the default look, so
- * a dead ArcGIS host falls back to OpenStreetMap — a different operator on a
- * different CDN — before the map admits that it has no basemap at all.
+ * Host order used when tiles stop arriving. USGS is inserted early as it is
+ * most reliable in cloud/embedded environments (no CDN restrictions).
  */
-const BASEMAP_CHAIN: readonly BasemapKey[] = ['esri-dark', 'osm', 'carto'];
+const BASEMAP_CHAIN: readonly BasemapKey[] = ['esri-dark', 'usgs', 'osm', 'carto'];
 
 /** Corner-bracket "fit to view" glyph for the reset control. */
 const RESET_ICON =
