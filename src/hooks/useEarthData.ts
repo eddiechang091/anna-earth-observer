@@ -433,12 +433,28 @@ export function useEarthData(): UseEarthDataReturn {
     try {
       const runtime = await getAnnaRuntime();
       if (runtime) {
-        const toolId = getToolId('earth-data', 'tool-dev-earth-data');
-        const resp = await runtime.tools.invoke(toolId, 'anomalies.fetch', {}) as {
-          success: boolean; data?: CanonicalDataResult; error?: string;
-        };
-        if (resp.success && resp.data && version === versionRef.current) {
-          setData(resp.data); setSource('anna'); setLoading(false); return;
+        // The bundled Executa routes through the user's Anna Agent, so it is
+        // legitimately unavailable sometimes (`agent_unavailable`,
+        // `tool_timeout`, `permission_denied`, `invalid_arg`). Scope the
+        // failure to this block — otherwise it aborts the direct public-API
+        // path below and the dashboard silently drops to static data.
+        try {
+          const toolId = getToolId('earth-data', 'tool-dev-earth-data');
+          const resp = (await runtime.tools.invoke({
+            tool_id: toolId,
+            method: 'anomalies.fetch',
+            args: {},
+          })) as {
+            success: boolean; data?: CanonicalDataResult; error?: string;
+          };
+          if (resp.success && resp.data && version === versionRef.current) {
+            setData(resp.data); setSource('anna'); setLoading(false); return;
+          }
+        } catch (toolError) {
+          console.warn(
+            '[useEarthData] bundled earth-data tool unavailable:',
+            toolError instanceof Error ? toolError.message : toolError,
+          );
         }
       }
       const result = await fetchDirect();
