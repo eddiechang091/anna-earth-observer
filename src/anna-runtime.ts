@@ -5,7 +5,30 @@ export type LLMMessage = {
   content: string | { type: 'text'; text: string };
 };
 
-type AnnaRuntime = {
+/**
+ * MCP-shaped `llm.complete` content (Host API reference `llm.*`). The host
+ * answers `content: {type:'text', text}`; a bare string (older host, test
+ * double) and a content-block array are also accepted.
+ *
+ * An empty `text` on a *successful* RPC is a legitimate reply, not an error:
+ * a reasoning-capable model can burn the entire output budget on hidden
+ * reasoning and return `{type:'text', text:''}` with
+ * `stopReason: 'endTurn'`. Callers MUST treat that as a failure.
+ */
+export type AnnaLlmContent =
+  | string
+  | { type?: string; text?: unknown }
+  | Array<{ type?: string; text?: unknown }>;
+
+export type AnnaLlmCompletion = {
+  content?: AnnaLlmContent;
+  model?: string;
+  stopReason?: string;
+  usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
+  _meta?: Record<string, unknown>;
+};
+
+export type AnnaRuntime = {
   window: { ready(o: Record<string, unknown>): Promise<void> };
   tools: {
     invoke(
@@ -15,17 +38,53 @@ type AnnaRuntime = {
     ): Promise<unknown>;
   };
   llm: {
+    /**
+     * Stateless single-shot completion against the user's provider. The field
+     * is `maxTokens` (NOT the OpenAI `max_tokens` spelling) and the dispatcher
+     * silently clamps it to the install grant's `max_tokens_per_call`.
+     */
     complete(params: {
       messages: LLMMessage[];
-      max_tokens?: number;
+      maxTokens?: number;
       temperature?: number;
-    }): Promise<{ content: string }>;
+      systemPrompt?: string;
+      modelPreferences?: Record<string, unknown>;
+    }): Promise<AnnaLlmCompletion>;
   };
 };
 
 type AnnaModule = { AnnaAppRuntime: { connect(): Promise<AnnaRuntime> } };
 
 let _promise: Promise<AnnaRuntime | null> | null = null;
+
+/**
+ * Text out of a host completion. Tolerant on purpose: the documented shape is
+ * `content: {type:'text', text}`, but a bare string and a content-block array
+ * are accepted too. Trimmed — an empty result means "no visible answer".
+ */
+export function llmContentText(response: unknown): string {
+  const content = (response as { content?: unknown } | null | undefined)?.content;
+  if (typeof content === 'string') return content.trim();
+  if (Array.isArray(content)) {
+    return content
+      .map((block) => {
+        const text = (block as { text?: unknown } | null)?.text;
+        return typeof text === 'string' ? text : '';
+      })
+      .join('')
+      .trim();
+  }
+  if (content && typeof content === 'object') {
+    const text = (content as { text?: unknown }).text;
+    if (typeof text === 'string') return text.trim();
+  }
+  return '';
+}
+
+/** Drops the cached connection so the next caller retries the host handshake. */
+export function resetAnnaRuntime(): void {
+  _promise = null;
+}
 
 export function getAnnaRuntime(): Promise<AnnaRuntime | null> {
   if (!_promise) {
@@ -39,10 +98,22 @@ export function getAnnaRuntime(): Promise<AnnaRuntime | null> {
           "/static/anna-apps/_sdk/latest/index.js",
         );
         const runtime = await AnnaAppRuntime.connect();
-        await runtime.window.ready({});
+        // Registration is best-effort: a host that rejects `window.ready` still
+        // serves `llm.*` and `tools.*`, so never fail the connection over it.
+        try {
+          await runtime.window?.ready({});
+        } catch {
+          /* non-fatal */
+        }
         return runtime;
       } catch {
-        return null; // running standalone outside the Anna host
+        // Standalone (plain `vite` dev server), or the host handshake was not
+        // available yet. Never cached: `main.tsx` fires one connect attempt at
+        // startup, and a container that mounts the iframe before its `wid`/`t`
+        // parameters exist would otherwise disable the LLM and tool channels
+        // for the rest of the session.
+        resetAnnaRuntime();
+        return null;
       }
     })();
   }
