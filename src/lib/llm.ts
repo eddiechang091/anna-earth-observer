@@ -37,7 +37,7 @@
  * Docs: https://docs.cline.bot/api/getting-started
  */
 
-import { getAnnaRuntime, llmContentText, type LLMMessage } from '@/anna-runtime';
+import { getAnnaRuntime, getAnnaRuntimeError, llmContentText, type LLMMessage } from '@/anna-runtime';
 
 export type { LLMMessage };
 
@@ -94,7 +94,14 @@ async function completeViaAnna(params: {
 }): Promise<LlmCompletion> {
   const runtime = await getAnnaRuntime();
   if (!runtime?.llm?.complete) {
-    throw new Error('Anna runtime unavailable (running outside the Anna host).');
+    // Name the recorded handshake failure when there is one: "outside the Anna
+    // host" is actively misleading when the real cause is a blocked SDK load.
+    const cause = getAnnaRuntimeError();
+    throw new Error(
+      cause
+        ? `Anna runtime unavailable (${cause}).`
+        : 'Anna runtime unavailable (running outside the Anna host).',
+    );
   }
 
   // The dispatcher silently clamps `maxTokens` down to the install grant's
