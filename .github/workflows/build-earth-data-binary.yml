@@ -13,6 +13,7 @@ jobs:
     permissions:
       contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: macos-latest
@@ -92,14 +93,29 @@ jobs:
             executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}
             executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}.sha256
           retention-days: 30
+
+  release:
+    needs: build
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
       
       - name: Create Release
-        if: github.event_name == 'workflow_dispatch'
         uses: ncipollo/release-action@v1
         with:
           tag: v${{ inputs.version }}
           artifacts: |
-            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}
-            executas/tool-dev-earth-data-${{ inputs.version }}-${{ matrix.platform }}.${{ matrix.format }}.sha256
+            artifacts/earth-data-darwin-arm64/*
+            artifacts/earth-data-darwin-x86_64/*
+            artifacts/earth-data-linux-x86_64/*
+            artifacts/earth-data-windows-x86_64/*
           allowUpdates: true
           draft: false
