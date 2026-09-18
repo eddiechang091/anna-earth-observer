@@ -224,7 +224,6 @@ const en = {
       scope: "{events} events · {sources} live sources · {domains} domains",
       provider: {
         anna: "Anna runtime",
-        cline: "Cline backup",
       },
     },
   },
@@ -451,7 +450,6 @@ const fr: Messages = {
       scope: "{events} événements · {sources} sources actives · {domains} domaines",
       provider: {
         anna: "Runtime Anna",
-        cline: "Secours Cline",
       },
     },
   },
@@ -676,7 +674,6 @@ const es: Messages = {
       scope: "{events} eventos · {sources} fuentes activas · {domains} dominios",
       provider: {
         anna: "Runtime de Anna",
-        cline: "Respaldo de Cline",
       },
     },
   },
