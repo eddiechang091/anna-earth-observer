@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   completeWithFallback,
-  clineConfigured,
+  ANNA_MAX_TOKENS_CAP,
   type LlmProviderId,
 } from '@/lib/llm';
 import {
@@ -9,7 +9,6 @@ import {
   buildToneSectionRequests,
   type ToneSectionRequest,
 } from '@/lib/ai-tones';
-import { clineMaxTokens } from '@/lib/llm';
 import type {
   CanonicalDataResult,
   AIAssessment,
@@ -128,9 +127,7 @@ async function requestSectionFromLLM(request: ToneSectionRequest): Promise<AISec
           content: { type: 'text', text: request.prompt },
         },
       ],
-      // Generous by design: reasoning models (Cline's free default) spend
-      // thousands of tokens thinking before the visible answer.
-      maxTokens: clineMaxTokens(),
+      maxTokens: ANNA_MAX_TOKENS_CAP,
       temperature: request.temperature,
     });
 
@@ -283,9 +280,7 @@ export function useAIAssessment(
     try {
       const compactData = buildUserMessage(data);
 
-      // Targeted prompts in parallel. The provider chain (Anna → Cline) is
-      // resolved per request, so an exhausted credit balance or a missing
-      // runtime degrades to the backup instead of leaving the panel empty.
+      // Anna LLM sends sections concurrently via completeWithFallback.
       // Requests for the same tone/language/dataset are shared rather than
       // duplicated when the user toggles tones faster than the model answers.
       let pending = inflightRef.current.get(key);
@@ -323,7 +318,7 @@ export function useAIAssessment(
       setError(null);
     } catch (e) {
       if (!isCurrent()) return;
-      setUnavailable(!clineConfigured());
+      setUnavailable(true);
       setError(e instanceof Error ? e.message : 'Assessment generation failed.');
     } finally {
       if (isCurrent()) setLoading(false);

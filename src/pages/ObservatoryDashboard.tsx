@@ -11,9 +11,8 @@ import { EventFeed } from '@/components/observatory/EventFeed';
 import { AIInsights } from '@/components/observatory/AIInsights';
 import { AnomalyDetailDialog } from '@/components/observatory/AnomalyDetailDialog';
 import { ObservatoryOffline } from '@/components/observatory/ObservatoryOffline';
-import { clineConfigured } from '@/lib/llm';
-import { LanguageContext } from '@/i18n/LanguageContext';
 import { useIsMobile } from '@/hooks/use-mobile';
+import type { CanonicalEvent, AITone } from '@/types/earth-data';
 import {
   Drawer,
   DrawerContent,
@@ -21,7 +20,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from '@/components/ui/drawer';
-import type { CanonicalEvent, AITone } from '@/types/earth-data';
+import { LanguageContext } from '@/i18n/LanguageContext';
 
 
 export const ObservatoryDashboard: React.FC = () => {
@@ -47,7 +46,6 @@ export const ObservatoryDashboard: React.FC = () => {
     error: aiError, unavailable: aiUnavailable,
     providers: aiProviders, generate: aiRefresh,
   } = useAIAssessment(loading ? null : data, aiTone, lang);
-  const backupConfigured = clineConfigured();
 
   const handleRetry = () => {
     setRetrying(true); refetch();
@@ -190,7 +188,6 @@ export const ObservatoryDashboard: React.FC = () => {
             eventCount={filteredEvents.length}
             sourceCount={data.dataHealth.filter(h => h.online).length}
             providers={aiProviders}
-            backupConfigured={backupConfigured}
           />
         </>
       )}
