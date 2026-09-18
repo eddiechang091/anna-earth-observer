@@ -260,3 +260,23 @@ When all data sources are unavailable, the dashboard displays static fallback ev
 ### Anna Runtime Integration
 
 When running inside the Anna host environment, the app gains access to an LLM via `getAnnaRuntime()`. This enables AI assessment. In standalone mode (e.g., local dev), the runtime returns null and AI features gracefully degrade.
+
+Two host constraints shape `src/anna-runtime.ts`:
+
+- **The SDK must be reached with a real `import()`.** The host serves it as a native ES module at
+  `/static/anna-apps/_sdk/latest/index.js` and allow-lists that origin in `script-src`, but the
+  bundle CSP carries **no** `'unsafe-eval'`. The `Function("u", "return import(u)")` indirection
+  that used to load it therefore threw `EvalError` *before* the `window.hello` handshake left the
+  iframe — presenting as "running in standalone mode" inside the host, with no failed request to
+  inspect. The dynamic import is annotated `/* @vite-ignore */` so the bundler keeps the URL
+  literal, and the `catch` now records why the handshake failed
+  (`getAnnaRuntimeError()`, surfaced in the AI panel copy and the console) instead of swallowing it.
+- **Tool ids come from the publish-time sidecar.** `anna-app apps publish` rewrites every
+  `bundled:<handle>` reference in the manifest to the server-minted tool id — which is what
+  `manifest.ui.host_api.tools` is then frozen against. The literal handle can never match that ACL
+  (`permission_denied`), and the minted id is unknowable at build time. The CLI writes the
+  handle → minted-id map to `bundle/anna-tool-ids.js`, which `loadToolIdSidecar()` injects as a
+  same-origin script before the first `tools.invoke`.
+
+Tool calls use the SDK's single-object RPC shape — `tools.invoke({ tool_id, method, args })` — not
+positional arguments, matching `describe`'s schema in the host method table.
