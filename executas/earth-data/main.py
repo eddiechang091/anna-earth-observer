@@ -16,7 +16,7 @@ import urllib.error
 from datetime import datetime, timezone
 from typing import Any
 
-VERSION = "1.1.5"
+VERSION = "1.1.6"
 TOOL_NAME = "earth-data"
 
 # Public APIs — all support no-auth access.
