@@ -20,7 +20,6 @@ interface AIInsightsProps {
   eventCount?: number;
   sourceCount?: number;
   providers?: string[];
-  backupConfigured?: boolean;
 }
 
 /** Custom properties carrying each chip's tone accent into CSS. */
