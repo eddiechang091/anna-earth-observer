@@ -24,10 +24,7 @@
         "https://a.basemaps.cartocdn.com",
         "https://b.basemaps.cartocdn.com",
         "https://c.basemaps.cartocdn.com",
-        "https://d.basemaps.cartocdn.com",
-        "https://cdnjs.cloudflare.com",
-        "https://resource-static.bj.bcebos.com",
-        "https://d8j0ntlcm91z4.cloudfront.net"
+        "https://d.basemaps.cartocdn.com"
       ]
     },
     "views": [
