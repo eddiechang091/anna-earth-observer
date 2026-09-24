@@ -1,6 +1,12 @@
 // ─── Legacy display types (kept for AnomalyDetailDialog) ───────────────────
 export type Priority      = 'high' | 'medium' | 'low';
-export type EventSource   = 'usgs' | 'eonet' | 'swpc' | 'celestrak' | 'gdacs';
+/**
+ * Upstream feed an event record came from.
+ * `nhc`, `nws` and `spc` were added with the tropical-cyclone / tornado
+ * domains: NOAA NHC (active tropical cyclones), NWS alerts (tornado
+ * warnings/watches) and NOAA SPC (daily tornado storm reports).
+ */
+export type EventSource   = 'usgs' | 'eonet' | 'swpc' | 'celestrak' | 'gdacs' | 'nhc' | 'nws' | 'spc';
 /**
  * Reader tone for the AI insights panel. Each tone drives its own prompt set,
  * its own response sections and its own panel layout.
@@ -40,11 +46,33 @@ export interface AnomalyEvent {
     link?: string;
     /** Raw `sources[]` records carried by the EONET API for one event. */
     sources?: { id?: string; url?: string }[];
+    /** Tropical-cyclone maximum sustained wind, normalised to km/h. */
+    intensityKph?: number;
+    /** Same wind speed in knots, which is NHC's native unit. */
+    intensityKt?: number;
+    /** Minimum central pressure in millibars (NHC advisories). */
+    pressureMb?: number;
+    /** Movement description, e.g. `W at 7 kt`. */
+    movement?: string;
+    /** Expiry of a NWS warning/watch (`expires` from the alerts feed). */
+    expires?: string;
   };
 }
 
 // ─── Canonical data model ─────────────────────────────────────────────────────
-export type EventDomain = 'earthquake' | 'wildfire' | 'storm' | 'flood' | 'volcano' | 'ice' | 'space_weather';
+export type EventDomain =
+  | 'earthquake'
+  | 'wildfire'
+  /** Tropical cyclones: hurricanes, typhoons, tropical storms (NHC/GDACS/EONET). */
+  | 'hurricane'
+  /** Tornado warnings, watches and verified storm reports (NWS/SPC). */
+  | 'tornado'
+  /** Non-tropical severe weather systems (EONET severe storms). */
+  | 'storm'
+  | 'flood'
+  | 'volcano'
+  | 'ice'
+  | 'space_weather';
 export type EventStatus = 'observed' | 'forecast' | 'watch' | 'warning' | 'alert' | 'closed';
 
 /** A single deduplicated physical event (one canonical record per real-world phenomenon). */

@@ -1,7 +1,7 @@
 {
   "slug": "earth-data",
   "name": "Earth Data",
-  "version": "1.1.6",
+  "version": "1.1.7",
   "executa_type": "tool",
   "tool_id": "tool-dev-earth-data",
   "type": "python",
@@ -20,10 +20,10 @@
         "executable_name": "tool-dev-earth-data",
         "supports_protocol": true,
         "binary_artifacts": {
-          "darwin-arm64":   { "path": "dist/tool-dev-earth-data-1.1.6-darwin-arm64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
-          "darwin-x86_64":  { "path": "dist/tool-dev-earth-data-1.1.6-darwin-x86_64.tar.gz",  "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
-          "linux-x86_64":   { "path": "dist/tool-dev-earth-data-1.1.6-linux-x86_64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
-          "windows-x86_64": { "path": "dist/tool-dev-earth-data-1.1.6-windows-x86_64.zip",    "entrypoint": "bin/tool-dev-earth-data.exe", "format": "zip" }
+          "darwin-arm64":   { "path": "dist/tool-dev-earth-data-1.1.7-darwin-arm64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "darwin-x86_64":  { "path": "dist/tool-dev-earth-data-1.1.7-darwin-x86_64.tar.gz",  "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "linux-x86_64":   { "path": "dist/tool-dev-earth-data-1.1.7-linux-x86_64.tar.gz",   "entrypoint": "bin/tool-dev-earth-data", "format": "tar.gz" },
+          "windows-x86_64": { "path": "dist/tool-dev-earth-data-1.1.7-windows-x86_64.zip",    "entrypoint": "bin/tool-dev-earth-data.exe", "format": "zip" }
         }
       }
     }

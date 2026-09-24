@@ -249,11 +249,17 @@ export const EventFeed: React.FC<EventFeedProps> = ({
       </div>
 
       {/* Count row */}
-      <div className="feed-count">
-        {totalCount} {totalCount !== 1 ? t('dashboard.eventCountPl') : t('dashboard.eventCount')}
-        {activeDomain && !isSpaceWeather ? ` · ${t(`dashboard.domains.${activeDomain}`)}` : ''}
-        {activeDomain && isSpaceWeather ? ` · ${t('dashboard.domains.space_weather')}` : ''}
-        {searchQuery ? ` · "${searchQuery}"` : ''}
+      <div className="feed-count" aria-busy={loading || undefined}>
+        {showSkeletons && totalCount === 0 ? (
+          <span className="skeleton skeleton--text" style={{ width: '104px' }} />
+        ) : (
+          <>
+            {totalCount} {totalCount !== 1 ? t('dashboard.eventCountPl') : t('dashboard.eventCount')}
+            {activeDomain && !isSpaceWeather ? ` · ${t(`dashboard.domains.${activeDomain}`)}` : ''}
+            {activeDomain && isSpaceWeather ? ` · ${t('dashboard.domains.space_weather')}` : ''}
+            {searchQuery ? ` · "${searchQuery}"` : ''}
+          </>
+        )}
       </div>
 
       {/* Scrollable list */}

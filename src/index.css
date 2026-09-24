@@ -561,6 +561,12 @@ body {
   box-shadow: 0 0 8px var(--accent-red);
 }
 
+/* Loading chip: keeps a real chip's footprint so the bar never changes height
+   when the first fetch resolves. */
+.status-chip--loading {
+  padding: 8px 10px;
+}
+
 /* Sticky state, applied once the hero scrolls out of view */
 .topbar--stuck {
   position: sticky;
@@ -688,9 +694,17 @@ body {
 .skeleton--score { height: 20px; width: 46px; }
 .skeleton--gauge { width: 132px; height: 132px; border-radius: 50%; }
 .skeleton--dot { width: 20px; height: 20px; border-radius: 50%; }
+/* 6px matches the small live-source dots in the hero eyebrow. */
+.skeleton--dot-sm { width: 6px; height: 6px; border-radius: 50%; }
+/* Status-bar chips: the bar stands in for a piece of text that is not known yet. */
+.skeleton--chip { height: 10px; width: 48px; }
+.skeleton--chip--wide { width: 84px; }
 
 /* Domain strip */
-.domain-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: var(--space-2); margin-bottom: var(--space-3); animation: panel-fade-in 0.8s cubic-bezier(0.16,1,0.3,1) 80ms backwards; }
+/* Nine domains: `auto-fit` keeps every tile on one row when there is room and
+   degrades to the 4- and 3-column media-query layouts below instead of squeezing
+   nine columns into a narrow viewport. */
+.domain-strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(116px, 1fr)); gap: var(--space-2); margin-bottom: var(--space-3); animation: panel-fade-in 0.8s cubic-bezier(0.16,1,0.3,1) 80ms backwards; }
 
 .domain-card {
   appearance: none;
@@ -741,12 +755,13 @@ body {
 .domain-card__label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.02em; }
 .domain-card__label::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
 
-/* Score meter — the 0–100 anomaly score is the app's primary metric and was
-   previously not surfaced on the strip at all. */
+/* Score meter — the 0–100 anomaly score is the app's primary metric. Only the
+   meter encodes it on the tile: the raw digits used to be printed after the bar,
+   where nothing labelled them and they read as a second event count. The exact
+   value lives in the card's title tooltip and accessible name. */
 .domain-card__foot { display: flex; align-items: center; gap: var(--space-2); width: 100%; margin-top: 2px; }
 .domain-card__meter { flex: 1; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.09); overflow: hidden; }
 .domain-card__meter span { display: block; height: 100%; border-radius: 999px; background: var(--alert-color, var(--domain-color)); transition: width 600ms cubic-bezier(0.16,1,0.3,1); }
-.domain-card__score { font-size: var(--fs-micro); font-weight: 700; color: var(--text-secondary); font-variant-numeric: tabular-nums; min-width: 24px; text-align: right; }
 
 /* Map + feed row */
 .map-feed-row {

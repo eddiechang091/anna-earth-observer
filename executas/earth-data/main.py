@@ -1,22 +1,30 @@
 #!/usr/bin/env python3
 """
-Earth Data Executa — real-time Earth anomaly data from USGS and NASA EONET.
+Earth Data Executa — real-time Earth anomaly data from public feeds.
 
 Implements the full Anna Executa protocol:
   initialize → notifications/initialized → describe → health → invoke → shutdown
+
+Sources (all no-auth, browser-compatible unless noted):
+  USGS earthquakes · NASA EONET natural events · NOAA SWPC space weather ·
+  UN GDACS disaster alerts · NOAA NHC active tropical cyclones ·
+  NOAA NWS tornado warnings/watches · NOAA SPC daily storm reports ·
+  ISS real-time position (wheretheiss.at, backend-side only).
 """
 from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import traceback
 import urllib.request
+import urllib.parse
 import urllib.error
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
-VERSION = "1.1.6"
+VERSION = "1.1.7"
 TOOL_NAME = "earth-data"
 
 # Public APIs — all support no-auth access.
@@ -24,6 +32,28 @@ USGS_URL  = "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_week.
 EONET_URL = "https://eonet.gsfc.nasa.gov/api/v3/events?status=open&limit=50&days=14"
 SWPC_URL  = "https://services.swpc.noaa.gov/products/alerts.json"
 ISS_URL   = "https://api.wheretheiss.at/v1/satellites/25544"
+# UN GDACS event list (GeoJSON): floods, volcanoes, tsunamis, tropical cyclones.
+# Sends `Access-Control-Allow-Origin: *`; mirrors the browser-side MAP endpoint.
+GDACS_URL = "https://www.gdacs.org/gdacsapi/api/events/geteventlist/MAP"
+# NOAA NHC active tropical cyclones — primary hurricane source (JTWC backup rides
+# along in GDACS). Sends `Access-Control-Allow-Origin: *`.
+NHC_URL   = "https://www.nhc.noaa.gov/CurrentStorms.json"
+# NOAA NWS active alerts — one query per event type (the `event` param takes no
+# list). Sends `Access-Control-Allow-Origin: *`.
+NWS_URL = "https://api.weather.gov/alerts/active?event={event}"
+NWS_ALERT_QUERIES = ("Tornado Warning", "Tornado Watch")
+# NOAA SPC "today" storm reports CSV (tornado + wind + hail tables concatenated).
+# This exact file returns the raw CSV (200, text/csv); the sibling directory
+# index returns an HTML page and must not be used here.
+SPC_URL = "https://www.spc.noaa.gov/climo/reports/today.csv"
+
+# EONET files tropical systems under its generic "Severe Storms" category, so a
+# title match is the only way to route a hurricane/typhoon to the domain that
+# exists for it. Case-insensitive substring match kept in sync with the browser.
+TROPICAL_CYCLONE_KEYWORDS = (
+    "hurricane", "typhoon", "tropical storm", "tropical cyclone",
+    "tropical depression", " cyclone",
+)
 
 AVATAR_POOL = ["MC", "AL", "JR", "SN", "KT", "AM", "DB", "RO", "PL", "XT"]
 AVATAR_CLASSES = [
@@ -36,9 +66,13 @@ AVATAR_CLASSES = [
 
 def _fetch(url: str) -> Any:
     req = urllib.request.Request(
-        url, headers={"User-Agent": "EarthAnomalyObservatory/1.0.0"}
+        url,
+        headers={
+            "User-Agent": "EarthAnomalyObservatory/1.1.28",
+            "Accept": "application/json, application/geo+json",
+        },
     )
-    with urllib.request.urlopen(req, timeout=15) as resp:
+    with urllib.request.urlopen(req, timeout=20) as resp:
         return json.loads(resp.read().decode())
 
 
@@ -91,6 +125,17 @@ def _avatars(seed: str, count: int = 2) -> list[dict]:
 
 
 # ─── Data fetching ────────────────────────────────────────────────────────────
+
+def _fetch_text(url: str) -> str:
+    req = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "EarthAnomalyObservatory/1.1.28",
+            "Accept": "text/csv, text/plain, */*",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return resp.read().decode("utf-8", errors="replace")
 
 def _fetch_usgs() -> tuple[list[dict], str | None]:
     try:
@@ -180,6 +225,12 @@ def _fetch_eonet() -> tuple[list[dict], str | None]:
 
             title: str = ev.get("title", "Unknown event")
 
+            sources = [
+                {"id": s.get("id"), "url": s.get("url")}
+                for s in (ev.get("sources") or [])
+                if isinstance(s, dict)
+            ]
+
             events.append({
                 "id": ev.get("id", title),
                 "name": title,
@@ -201,13 +252,31 @@ def _fetch_eonet() -> tuple[list[dict], str | None]:
                 ],
                 "extra": {
                     "lastObserved": last_date,
-                    "link": f"https://eonet.gsfc.nasa.gov/events/{ev.get('id', '')}",
+                    "link": f"https://eonet.gsfc.nasa.gov/api/v3/events/{ev.get('id', '')}",
+                    "sources": sources,
                 },
                 "avatars": _avatars(ev.get("id", title), 1),
             })
         return events, None
     except Exception as exc:  # noqa: BLE001
         return [], f"EONET fetch failed: {exc}"
+
+
+def _cyclone_scale(wind_kph: float) -> str | None:
+    """Saffir-Simpson style class for a maximum sustained wind in km/h."""
+    if wind_kph >= 252:
+        return "CAT5"
+    if wind_kph >= 209:
+        return "CAT4"
+    if wind_kph >= 178:
+        return "CAT3"
+    if wind_kph >= 154:
+        return "CAT2"
+    if wind_kph >= 119:
+        return "CAT1"
+    if wind_kph >= 63:
+        return "TS"
+    return None
 
 
 def _fetch_swpc() -> tuple[list[dict], str | None]:
@@ -286,6 +355,330 @@ def _fetch_swpc() -> tuple[list[dict], str | None]:
         return events, None
     except Exception as exc:  # noqa: BLE001
         return [], f"SWPC fetch failed: {exc}"
+
+
+def _fetch_gdacs() -> tuple[list[dict], str | None]:
+    """UN GDACS event list: floods, volcanoes, tsunamis, cyclones."""
+    try:
+        data = _fetch(GDACS_URL)
+        events: list[dict] = []
+        for feat in data.get("features", []) or []:
+            props = feat.get("properties", {}) or {}
+            geom = feat.get("geometry", {}) or {}
+            event_type = str(props.get("eventtype", ""))
+            domain = {"FL": "flood", "VO": "volcano", "TS": "flood",
+                      "TC": "hurricane"}.get(event_type)
+            if not domain:
+                continue
+            raw = geom.get("coordinates", [0.0, 0.0]) or [0.0, 0.0]
+            lon = float(raw[0]) if len(raw) > 0 else 0.0
+            lat = float(raw[1]) if len(raw) > 1 else 0.0
+            from_date = str(props.get("fromdate", "") or "")
+            try:
+                iso = from_date.replace(" ", "T") + "Z" if from_date else None
+                h = _age_hours(iso=iso) if iso else 0.0
+            except Exception:
+                h = 0.0
+            raw_cur = props.get("iscurrent")
+            is_cur = None if raw_cur is None \
+                else str(raw_cur).lower() == "true"
+            if domain == "hurricane":
+                if is_cur is False:
+                    continue
+                if is_cur is None and h > 168:
+                    continue
+            elif h > 168:
+                continue
+            alert = str(props.get("alertlevel", "") or "").lower() or None
+            eid = f"gdacs_{props.get('eventid', props.get('eventname', 'x'))}"
+            wind = 0.0
+            try:
+                wind = float((props.get("severitydata") or {}).get("severity", 0) or 0)
+            except (TypeError, ValueError):
+                wind = 0.0
+            detected = "00:00"
+            if from_date:
+                try:
+                    detected = datetime.fromisoformat(
+                        from_date.replace(" ", "T") + "+00:00").strftime("%H:%M")
+                except ValueError:
+                    detected = "00:00"
+            extra: dict = {"alertLevel": alert, "link": "https://www.gdacs.org/"}
+            if domain == "hurricane" and wind > 0:
+                extra["intensityKph"] = round(wind)
+                extra["scale"] = _cyclone_scale(wind)
+            events.append({
+                "id": eid, "name": str(props.get("eventname", "Unknown event")),
+                "region": str(props.get("country", "Unknown")),
+                "priority": "high" if alert == "red"
+                    else "medium" if alert == "orange" else "low",
+                "status": "monitoring", "detectedAt": detected,
+                "magnitude": 0.0, "confidence": 70, "progressPercent": 50,
+                "descKey": "signal.tracking", "source": "gdacs",
+                "type": event_type.lower(),
+                "ageHours": round(h, 1), "ageText": _fmt_age(h),
+                "coordinates": [round(lon, 4), round(lat, 4)],
+                "extra": extra, "avatars": _avatars(eid, 1),
+            })
+        return events, None
+    except Exception as exc:  # noqa: BLE001
+        return [], f"GDACS fetch failed: {exc}"
+
+
+_STORM_STOPWORDS = frozenset({
+    "tropical", "cyclone", "storm", "hurricane", "typhoon",
+    "severe", "depression", "post", "potential", "super", "major",
+    "the", "and", "from", "over",
+})
+
+
+def _storm_name_tokens(name: str) -> set[str]:
+    """Identity tokens of a storm name (generic words removed)."""
+    return {
+        t for t in re.split(r"[^A-Z0-9]+", (name or "").upper())
+        if len(t) >= 4 and t.lower() not in _STORM_STOPWORDS
+    }
+
+
+def _same_storm(a: dict, b: dict) -> bool:
+    return bool(_storm_name_tokens(a.get("name", "")) & _storm_name_tokens(b.get("name", "")))
+
+
+def _merge_tropical_cyclones(preferred: list[dict], secondary: list[dict]) -> list[dict]:
+    """Merge the same named storm reported by two feeds (GDACS + NHC/EONET)."""
+    merged = [dict(ev) for ev in preferred]
+    for ev in secondary:
+        if ev.get("domain") != "hurricane":
+            continue
+        match = next(
+            (m for m in merged
+             if m.get("domain") == "hurricane" and _same_storm(m, ev)), None)
+        if match is None:
+            merged.append(dict(ev))
+            continue
+        for rid in ev.get("sourceRecordIds", [ev.get("id")]):
+            if rid not in match["sourceRecordIds"]:
+                match["sourceRecordIds"].append(rid)
+        match["sourceCount"] = len(match["sourceRecordIds"])
+    rest = [dict(ev) for ev in secondary if ev.get("domain") != "hurricane"]
+    return merged + rest
+
+
+def _fetch_nhc() -> tuple[list[dict], str | None]:
+    """NOAA NHC active tropical cyclones (authoritative Atlantic/EPac)."""
+    try:
+        data = _fetch(NHC_URL)
+        storms = data.get("activeStorms", []) if isinstance(data, dict) else []
+        events: list[dict] = []
+        basins = {"AL": "Atlantic", "EP": "Eastern Pacific", "CP": "Central Pacific"}
+        for storm in storms:
+            if not isinstance(storm, dict):
+                continue
+            name = str(storm.get("name", "Unknown storm")).strip().title()
+            cls = str(storm.get("classification", "") or "").strip()
+            try:
+                kt = int(float(storm.get("intensity", 0) or 0))
+            except (TypeError, ValueError):
+                kt = 0
+            kph = round(kt * 1.852)
+            try:
+                lat = float(str(storm.get("latitude", "0") or "0").upper()
+                            .replace("N", "").replace("S", "-"))
+                lon = float(str(storm.get("longitude", "0") or "0").upper()
+                            .replace("E", "").replace("W", "-"))
+            except ValueError:
+                lat, lon = 0.0, 0.0
+            basin = str(storm.get("basin", "") or "")
+            eid = f"nhc_{basin}_{storm.get('id', name)}".replace(" ", "_")
+            try:
+                mb = int(float(storm.get("pressure"))) if storm.get("pressure") else None
+            except (TypeError, ValueError):
+                mb = None
+            extra = {
+                "link": "https://www.nhc.noaa.gov/",
+                "intensityKt": kt, "intensityKph": kph,
+                "scale": _cyclone_scale(kph),
+                "movement": str(storm.get("movement", "") or "") or None,
+            }
+            if mb:
+                extra["pressureMb"] = mb
+            events.append({
+                "id": eid, "name": f"{cls} {name}".strip() or name,
+                "region": basins.get(basin, basin or "Tropics"),
+                "priority": "high" if kph >= 178 else "medium" if kph >= 119 else "low",
+                "status": "monitoring",
+                "detectedAt": datetime.now(timezone.utc).strftime("%H:%M"),
+                "magnitude": 0.0, "confidence": 85, "progressPercent": 50,
+                "descKey": "signal.tracking", "source": "nhc",
+                "type": "tropical_cyclone",
+                "ageHours": 0.0, "ageText": "Active",
+                "coordinates": [round(lon, 4), round(lat, 4)],
+                "extra": extra, "avatars": _avatars(eid, 1),
+            })
+        return events, None
+    except Exception as exc:  # noqa: BLE001
+        return [], f"NHC fetch failed: {exc}"
+
+
+def _shorten_area(area_desc: str) -> str:
+    """Shorten an NWS `areaDesc` to fit a feed row."""
+    parts = [p.strip() for p in area_desc.split(",") if p.strip()]
+    if not parts:
+        return "United States"
+    if len(parts) <= 2:
+        return ", ".join(parts)
+    return f"{', '.join(parts[:2])} +{len(parts) - 2}"
+
+
+def _polygon_centre(geometry: Any) -> list[float] | None:
+    """Centroid of a GeoJSON Polygon/MultiPolygon (NWS polygons)."""
+    if not isinstance(geometry, dict):
+        return None
+    points: list[list[float]] = []
+
+    def collect(node: Any) -> None:
+        if isinstance(node, list) and len(node) >= 2 \
+                and isinstance(node[0], (int, float)) \
+                and isinstance(node[1], (int, float)):
+            points.append([float(node[0]), float(node[1])])
+            return
+        if isinstance(node, list):
+            for child in node:
+                collect(child)
+
+    collect(geometry.get("coordinates"))
+    if not points:
+        return None
+    lon = sum(p[0] for p in points) / len(points)
+    lat = sum(p[1] for p in points) / len(points)
+    return [round(lon, 4), round(lat, 4)]
+
+
+def _fetch_nws() -> tuple[list[dict], str | None]:
+    """NOAA NWS active tornado warnings/watches (US, authoritative)."""
+    events: list[dict] = []
+    ok = False
+    for kind in NWS_ALERT_QUERIES:
+        try:
+            data = _fetch(NWS_URL.format(event=urllib.parse.quote(kind)))
+        except Exception:
+            continue
+        ok = True
+        for feat in data.get("features", []) or []:
+            props = (feat or {}).get("properties", {}) or {}
+            centre = _polygon_centre((feat or {}).get("geometry"))
+            if not centre:
+                continue
+            area = str(props.get("areaDesc", "") or "")
+            issued = str(props.get("onset", "") or props.get("effective", "")
+                         or props.get("sent", "") or "")
+            try:
+                h = _age_hours(iso=issued) if issued else 0.0
+            except Exception:
+                h = 0.0
+            sev = str(props.get("severity", "") or "").lower()
+            params = props.get("parameters", {}) or {}
+            threat = ""
+            for key in ("tornadoDamageThreat", "tornadoDetection"):
+                vals = params.get(key) or []
+                if vals:
+                    threat = str(vals[0])
+                    break
+            first = next((p.strip() for p in area.split(",") if p.strip()), "")
+            eid = str(props.get("id", f"{kind}-{centre[1]}-{centre[0]}"))
+            priority = ("high" if sev in ("extreme", "severe") else "medium") \
+                if kind == "Tornado Warning" else "low"
+            detected = "00:00"
+            if issued:
+                try:
+                    detected = datetime.fromisoformat(
+                        issued.replace("Z", "+00:00")).strftime("%H:%M")
+                except ValueError:
+                    detected = "00:00"
+            events.append({
+                "id": eid,
+                "name": f"{kind} — {first}" if first else kind,
+                "region": f"{_shorten_area(area)} (US)",
+                "priority": priority,
+                "status": "warning" if kind == "Tornado Warning" else "watch",
+                "detectedAt": detected,
+                "magnitude": 0.0, "confidence": 85 if priority == "high" else 72,
+                "progressPercent": 50, "descKey": "signal.tracking",
+                "source": "nws", "type": kind.lower().replace(" ", "_"),
+                "ageHours": round(h, 1), "ageText": _fmt_age(h),
+                "coordinates": centre,
+                "sourceRecordIds": [eid], "sourceCount": 1,
+                "deduplicationKey": f"nws:{eid}",
+                "extra": {
+                    "alertLevel": sev or None,
+                    "scale": threat.upper() or None,
+                    "expires": str(props.get("expires", "") or ""),
+                    "link": str(props.get("@id", "") or "https://www.weather.gov/"),
+                },
+                "avatars": _avatars(eid, 1),
+            })
+    if not ok:
+        return [], "NWS fetch failed: all alert queries failed"
+    return events, None
+
+
+def _fetch_spc() -> tuple[list[dict], str | None]:
+    """NOAA SPC \"today\" storm reports: tornado rows only (wind/hail skipped)."""
+    try:
+        csv_text = _fetch_text(SPC_URL)
+    except Exception as exc:  # noqa: BLE001
+        return [], f"SPC fetch failed: {exc}"
+    events: list[dict] = []
+    now = datetime.now(timezone.utc)
+    day_start = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    for line in csv_text.splitlines():
+        cols = line.split(",")
+        if len(cols) < 7:
+            continue
+        time_raw, scale_raw = cols[0].strip(), cols[1].strip().upper()
+        location, county, state = cols[2].strip(), cols[3].strip(), cols[4].strip()
+        try:
+            lat, lon = float(cols[5]), float(cols[6])
+        except ValueError:
+            continue
+        if not time_raw.isdigit() or len(time_raw) != 4:
+            continue
+        if scale_raw in {"UNK", "UNKNOWN", "UNG"}:
+            scale = "UNK"
+        elif scale_raw.isdigit() and len(scale_raw) == 1:
+            scale = f"EF{scale_raw}"
+        elif re.fullmatch(r"EF?[0-5]", scale_raw):
+            scale = scale_raw if scale_raw.startswith("EF") else f"EF{scale_raw[-1]}"
+        else:
+            continue  # wind-speed / hail-size rows belong to other tables
+        hh, mm = int(time_raw[:2]), int(time_raw[2:])
+        if not (0 <= hh < 24 and 0 <= mm < 60):
+            continue
+        ts = day_start + timedelta(hours=hh, minutes=mm)
+        h = max(0.0, (now - ts).total_seconds() / 3600)
+        if h > 24:
+            continue
+        rating = int(scale[2]) if scale.startswith("EF") else None
+        eid = f"spc_{int(ts.timestamp())}_{lat}_{lon}"
+        name = f"Tornado Report — {location or county}, {state}".strip()
+        events.append({
+            "id": eid, "name": name,
+            "region": f"{county} County, {state}",
+            "priority": "high" if rating is not None and rating >= 2
+                else "medium" if rating == 1 else "low",
+            "status": "observed",
+            "detectedAt": ts.strftime("%H:%M"),
+            "magnitude": 0.0, "confidence": 80 if rating is not None else 60,
+            "progressPercent": 50, "descKey": "signal.tracking",
+            "source": "spc", "type": "tornado_report",
+            "ageHours": round(h, 1), "ageText": _fmt_age(h),
+            "coordinates": [round(lon, 4), round(lat, 4)],
+            "sourceRecordIds": [eid], "sourceCount": 1,
+            "deduplicationKey": f"spc:{int(ts.timestamp())}:{lat}:{lon}",
+            "extra": {"scale": scale, "link": "https://www.spc.noaa.gov/climo/reports/"},
+            "avatars": _avatars(eid, 1),
+        })
+    return events, None
 
 
 def _fetch_satellites() -> tuple[list[dict], str | None]:
@@ -449,10 +842,10 @@ def _domain_score_earthquake(usgs_events: list[dict]) -> dict:
     }
 
 
-def _domain_score_wildfire(eonet_events: list[dict]) -> dict:
+def _domain_score_wildfire(eonet_events: list[dict], gdacs_events: list | None = None) -> dict:
     fires = [e for e in eonet_events if "wildfire" in e.get("type", "").lower() or "fire" in e.get("type", "").lower()]
     count = len(fires)
-    # EONET typically tracks 25–45 active global wildfires in a 14-day window
+    # EONET typically tracks 25-45 active global wildfires in a 14-day window
     rate_score = min(100, round((count / 35) * 70))
     return {
         "domain": "wildfire", "label": "Wildfires",
@@ -461,31 +854,92 @@ def _domain_score_wildfire(eonet_events: list[dict]) -> dict:
         "mainDriver": f"{count} active incidents (14-day window)",
         "confidence": 65, "eventCount": count,
         "baselineAvailable": True,
-        "baselineMethod": "EONET reference (≈35 global active fires)",
+        "baselineMethod": "EONET reference (~35 global active fires)",
         "dataCoverage": 1.0 if count > 0 else 0.5,
     }
 
 
-def _domain_score_storm(eonet_events: list[dict]) -> dict:
-    storms = [e for e in eonet_events if "storm" in e.get("type", "").lower()]
-    count  = len(storms)
-    has_major = any(
-        kw in e["name"].lower()
-        for e in storms
-        for kw in ("hurricane", "typhoon")
-    )
-    # Typical global named storms: ~7 active; major hurricane adds severity bonus
-    rate_score = min(60, round((count / 7) * 60))
-    severity_bonus = 40 if has_major else 0
+def _domain_score_hurricane(hurricanes: list[dict]) -> dict:
+    count = len(hurricanes)
+    peak = 0
+    for ev in hurricanes:
+        try:
+            wind = float((ev.get("extra") or {}).get("intensityKph", 0) or 0)
+        except (TypeError, ValueError):
+            wind = 0.0
+        peak = max(peak, wind)
+    bonus = 40 if peak >= 178 else 28 if peak >= 119 else 14 if peak >= 63 else 0
     return {
-        "domain": "storm", "label": "Storms",
-        "score": min(100, rate_score + severity_bonus),
+        "domain": "hurricane", "label": "Hurricanes & Cyclones",
+        "score": min(100, round((count / 4) * 50) + bonus),
         "trend": "stable",
-        "mainDriver": f"{count} named events" + (" (major storm active)" if has_major else ""),
+        "mainDriver": "No active tropical cyclones" if count == 0
+            else f"{count} active storm(s), peak wind {round(peak)} km/h",
+        "confidence": 75, "eventCount": count,
+        "baselineAvailable": True,
+        "baselineMethod": "GDACS/NHC reference (~4 active tropical cyclones)",
+        "dataCoverage": 1.0 if count > 0 else 0.5,
+    }
+
+
+def _domain_score_tornado(tornadoes: list[dict]) -> dict:
+    reports = sum(1 for e in tornadoes if e.get("source") == "spc")
+    alerts = sum(1 for e in tornadoes if e.get("source") == "nws")
+    return {
+        "domain": "tornado", "label": "Tornadoes",
+        "score": min(100, round((reports / 3) * 60) + min(40, alerts * 8)),
+        "trend": "stable",
+        "mainDriver": "No tornado reports or warnings today" if not tornadoes
+            else f"{reports} report(s) today, {alerts} active warning/watch(es)",
+        "confidence": 70, "eventCount": len(tornadoes),
+        "baselineAvailable": True,
+        "baselineMethod": "SPC/NWS reference (NOAA avg ~3 US tornadoes/day)",
+        "dataCoverage": 1.0 if tornadoes else 0.5,
+    }
+
+
+def _domain_score_storm(all_events: list[dict]) -> dict:
+    storms = [e for e in all_events if e.get("domain") == "storm"]
+    count = len(storms)
+    return {
+        "domain": "storm", "label": "Severe Storms",
+        "score": min(100, round((count / 4) * 60)),
+        "trend": "stable",
+        "mainDriver": f"{count} tracked severe weather systems",
         "confidence": 70, "eventCount": count,
         "baselineAvailable": True,
-        "baselineMethod": "EONET reference (≈7 global active named storms)",
+        "baselineMethod": "EONET reference (~4 non-tropical systems)",
         "dataCoverage": 1.0 if count > 0 else 0.5,
+    }
+
+
+def _domain_score_flood(all_events: list[dict]) -> dict:
+    floods = [e for e in all_events if e.get("domain") == "flood"]
+    count = len(floods)
+    return {
+        "domain": "flood", "label": "Floods",
+        "score": min(100, round((count / 5) * 60)),
+        "trend": "stable",
+        "mainDriver": f"{count} tracked flood events",
+        "confidence": 60, "eventCount": count,
+        "baselineAvailable": count > 0,
+        "baselineMethod": "EONET/GDACS flood event tracking",
+        "dataCoverage": 1.0 if count > 0 else 0.4,
+    }
+
+
+def _domain_score_volcano(all_events: list[dict]) -> dict:
+    volcs = [e for e in all_events if e.get("domain") == "volcano"]
+    count = len(volcs)
+    return {
+        "domain": "volcano", "label": "Volcanoes",
+        "score": min(100, round((count / 3) * 60)),
+        "trend": "stable",
+        "mainDriver": f"{count} active volcanic events",
+        "confidence": 70, "eventCount": count,
+        "baselineAvailable": count > 0,
+        "baselineMethod": "EONET/GDACS volcanic activity monitoring",
+        "dataCoverage": 1.0 if count > 0 else 0.4,
     }
 
 
@@ -530,9 +984,11 @@ def _domain_score_space_weather(episodes: list[dict]) -> dict:
 
 
 def _compute_gai(domain_scores: list[dict]) -> dict:
+    # Mirrors DOMAIN_WEIGHTS (frontend) and WEIGHTS (browser pipeline).
     WEIGHTS: dict[str, float] = {
-        "earthquake": 0.25, "wildfire": 0.20, "storm": 0.20,
-        "ice": 0.10, "space_weather": 0.25,
+        "earthquake": 0.18, "wildfire": 0.12, "hurricane": 0.15,
+        "tornado": 0.10, "storm": 0.10, "flood": 0.12,
+        "volcano": 0.06, "ice": 0.05, "space_weather": 0.12,
     }
     available = [d for d in domain_scores if d["baselineAvailable"] and d["dataCoverage"] >= 0.5]
     total_w   = sum(WEIGHTS.get(d["domain"], 0) for d in available)
@@ -572,6 +1028,10 @@ def fetch_anomalies() -> dict:
     usgs_raw,  usgs_err  = _fetch_usgs()
     eonet_raw, eonet_err = _fetch_eonet()
     swpc_raw,  swpc_err  = _fetch_swpc()
+    gdacs_raw, gdacs_err = _fetch_gdacs()
+    nhc_raw,   nhc_err   = _fetch_nhc()
+    nws_raw,   nws_err   = _fetch_nws()
+    spc_raw,   spc_err   = _fetch_spc()
     iss_data,  iss_err   = _fetch_satellites()
 
     fetch_ms = round((datetime.now(timezone.utc) - t0).total_seconds() * 1000)
@@ -583,14 +1043,19 @@ def fetch_anomalies() -> dict:
     # Group SWPC bulletins into physical episodes (not individual events)
     swpc_episodes = _group_swpc_episodes(swpc_raw)
 
-    # Build canonical events from USGS + deduplicated EONET
-    # ISS is spacecraft telemetry — NOT an environmental anomaly
+    # Build canonical events from USGS + deduplicated EONET + GDACS/NHC/NWS/SPC.
+    # ISS is spacecraft telemetry — NOT an environmental anomaly.
+    # EONET's "Severe Storms" bucket hides tropical cyclones: a title match
+    # routes those into the hurricane domain instead of storm.
     DOMAIN_MAP = {
         "earthquake": "earthquake",
         "wildfires": "wildfire", "wildfire": "wildfire",
         "severe_storms": "storm", "storm": "storm",
-        "sea_and_lake_ice": "ice", "ice": "ice",
-        "volcanoes": "wildfire",  # domain: surface hazard
+        "sea_and_lake_ice": "ice", "ice": "ice", "snow": "ice",
+        "volcanoes": "volcano", "volcano": "volcano",
+        "floods": "flood", "flood": "flood",
+        "drought": "wildfire", "dust_and_haze": "wildfire",
+        "landslides": "storm", "temperature_extremes": "wildfire",
     }
     canonical_events: list[dict] = []
     for ev in usgs_raw:
@@ -601,19 +1066,71 @@ def fetch_anomalies() -> dict:
         e["deduplicationKey"] = f"usgs:{ev['id']}"
         canonical_events.append(e)
 
+    hurricanes: list[dict] = []
+    for ev in gdacs_raw:
+        e = dict(ev)
+        e.setdefault("sourceRecordIds", [ev["id"]])
+        e.setdefault("sourceCount", 1)
+        e["deduplicationKey"] = f"gdacs:{ev['id']}"
+        if e.get("domain") == "hurricane":
+            hurricanes.append(e)
+        else:
+            canonical_events.append(e)
+
+    for ev in nhc_raw:
+        e = dict(ev)
+        e["domain"] = "hurricane"
+        e.setdefault("sourceRecordIds", [ev["id"]])
+        e.setdefault("sourceCount", 1)
+        e["deduplicationKey"] = f"nhc:{ev['id']}"
+        merged_into: dict | None = None
+        for existing in hurricanes:
+            if _same_storm(existing, e):
+                merged_into = existing
+                break
+        if merged_into is None:
+            hurricanes.append(e)
+        else:
+            for rid in e.get("sourceRecordIds", [e.get("id")]):
+                if rid not in merged_into["sourceRecordIds"]:
+                    merged_into["sourceRecordIds"].append(rid)
+            merged_into["sourceCount"] = len(merged_into["sourceRecordIds"])
+
+    tornadoes: list[dict] = list(nws_raw) + list(spc_raw)
+
+    eonet_leftovers: list[dict] = []
     for ev in eonet_deduped:
         e = dict(ev)
-        e["domain"] = DOMAIN_MAP.get(ev.get("type", ""), "wildfire")
-        canonical_events.append(e)
+        mapped = DOMAIN_MAP.get(ev.get("type", ""), "wildfire")
+        title = str(ev.get("name", "") or "")
+        lowered = title.lower()
+        is_tropical = any(kw in lowered for kw in TROPICAL_CYCLONE_KEYWORDS)
+        if mapped == "storm" and is_tropical:
+            e["domain"] = "hurricane"
+            hurricanes.append(e)
+        else:
+            e["domain"] = mapped
+            eonet_leftovers.append(e)
+    hurricanes = _merge_tropical_cyclones(hurricanes, [])
+    canonical_events.extend(hurricanes)
+    canonical_events.extend(eonet_leftovers)
+    canonical_events.extend(tornadoes)
 
     priority_order = {"high": 0, "medium": 1, "low": 2}
     canonical_events.sort(key=lambda x: (priority_order.get(x["priority"], 3), x["ageHours"]))
 
-    # Domain scores
+    # Domain scores (hurricane/tornado lists bypass `all_events` on purpose:
+    # EONET-sourced cyclones stay inside `hurricanes`, NWS/SPC records live
+    # only in `tornadoes`, so counting from the merged canonical pool would
+    # silently drop them from their own scores).
     domain_scores = [
         _domain_score_earthquake(usgs_raw),
         _domain_score_wildfire(eonet_deduped),
-        _domain_score_storm(eonet_deduped),
+        _domain_score_hurricane(hurricanes),
+        _domain_score_tornado(tornadoes),
+        _domain_score_storm(canonical_events),
+        _domain_score_flood(canonical_events),
+        _domain_score_volcano(canonical_events),
         _domain_score_ice(eonet_deduped),
         _domain_score_space_weather(swpc_episodes),
     ]
@@ -650,10 +1167,18 @@ def fetch_anomalies() -> dict:
          "lastUpdate": _first_update(swpc_raw), "recordCount": len(swpc_raw),
          "episodeCount": len(swpc_episodes), "latencyMs": fetch_ms,
          "errors": [swpc_err] if swpc_err else []},
-        {"source": "celestrak","label": "ISS Telemetry",     "online": iss_err is None,
-         "lastUpdate": iss_telemetry["lastUpdated"] if iss_telemetry else "--",
-         "recordCount": 1 if iss_data else 0, "latencyMs": fetch_ms,
-         "errors": [iss_err] if iss_err else []},
+        {"source": "gdacs",    "label": "UN GDACS Alerts",    "online": gdacs_err is None,
+         "lastUpdate": _first_update(gdacs_raw), "recordCount": len(gdacs_raw),
+         "latencyMs": fetch_ms, "errors": [gdacs_err] if gdacs_err else []},
+        {"source": "nhc",      "label": "NOAA NHC Cyclones",  "online": nhc_err is None,
+         "lastUpdate": _first_update(nhc_raw), "recordCount": len(nhc_raw),
+         "latencyMs": fetch_ms, "errors": [nhc_err] if nhc_err else []},
+        {"source": "nws",      "label": "NOAA NWS Tornado",   "online": nws_err is None,
+         "lastUpdate": _first_update(nws_raw), "recordCount": len(nws_raw),
+         "latencyMs": fetch_ms, "errors": [nws_err] if nws_err else []},
+        {"source": "spc",      "label": "NOAA SPC Reports",   "online": spc_err is None,
+         "lastUpdate": _first_update(spc_raw), "recordCount": len(spc_raw),
+         "latencyMs": fetch_ms, "errors": [spc_err] if spc_err else []},
     ]
 
     return {
@@ -663,55 +1188,10 @@ def fetch_anomalies() -> dict:
         "domainScores": domain_scores,
         "issTelemetry": iss_telemetry,
         "dataHealth": data_health,
-        "errors": [e for e in [usgs_err, eonet_err, swpc_err, iss_err] if e],
-        "fetchedAt": datetime.now(timezone.utc).isoformat(),
-    }
-
-
-    priority_order = {"high": 0, "medium": 1, "low": 2}
-    anomalies = sorted(
-        usgs_events + eonet_events + swpc_events + sat_events,
-        key=lambda x: (priority_order.get(x["priority"], 3), x["ageHours"]),
-    )
-
-    regions = len({a["region"] for a in anomalies if a["region"]})
-
-    metrics = {
-        "open": len(anomalies),
-        "regions": regions,
-        "aiAssessments": min(len(anomalies), 10),
-    }
-
-    # Build top-3 network regions from most anomaly-dense areas
-    region_counts: dict[str, dict] = {}
-    for a in anomalies:
-        r = a["region"]
-        if r not in region_counts:
-            region_counts[r] = {"count": 0, "status": a["status"], "time": a["detectedAt"]}
-        region_counts[r]["count"] += 1
-
-    network_regions = [
-        {
-            "name": name,
-            "status": info["status"],
-            "time": info["time"],
-            "progress": min(100, info["count"] * 25),
-            "percentText": f"{min(100, info['count'] * 25)}%",
-        }
-        for name, info in sorted(
-            region_counts.items(), key=lambda kv: -kv[1]["count"]
-        )[:3]
-    ]
-
-    errors = [e for e in [usgs_err, eonet_err, swpc_err, sat_err] if e]
-
-    return {
-        "anomalies": anomalies,
-        "anomalyIndex": _anomaly_index(anomalies),
-        "metrics": metrics,
-        "insights": _insights(anomalies),
-        "networkRegions": network_regions,
-        "errors": errors,
+        "errors": [
+            e for e in [usgs_err, eonet_err, swpc_err, gdacs_err, nhc_err,
+                        nws_err, spc_err, iss_err] if e
+        ],
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -760,6 +1240,8 @@ def _handle(msg: dict) -> dict | None:
                 "description": (
                     "Fetches real-time Earth and space anomaly data from USGS Earthquakes, "
                     "NASA EONET natural events, NOAA Space Weather Prediction Center, "
+                    "UN GDACS disaster alerts, NOAA NHC active tropical cyclones, "
+                    "NOAA NWS tornado warnings/watches, NOAA SPC daily tornado reports, "
                     "and ISS satellite tracking."
                 ),
                 "tools": [
@@ -767,7 +1249,8 @@ def _handle(msg: dict) -> dict | None:
                         "name": "anomalies.fetch",
                         "description": (
                             "Returns current earthquakes (M4.5+, last 7 days), open natural events "
-                            "(last 14 days), NOAA space weather alerts, and real-time ISS position, "
+                            "(last 14 days), active tropical cyclones, tornado warnings and reports, "
+                            "NOAA space weather alerts, and real-time ISS position, "
                             "with derived metrics and a Global Anomaly Index score."
                         ),
                         "parameters": [],

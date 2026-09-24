@@ -14,6 +14,8 @@ import type { CanonicalEvent, EventDomain, Priority } from '@/types/earth-data';
 export const DOMAIN_COLORS: Record<EventDomain, string> = {
   earthquake:    '#f59e0b',
   wildfire:      '#ef4444',
+  hurricane:     '#2dd4bf',
+  tornado:       '#f472b6',
   storm:         '#818cf8',
   flood:         '#3b82f6',
   volcano:       '#f97316',
@@ -24,6 +26,8 @@ export const DOMAIN_COLORS: Record<EventDomain, string> = {
 export const DOMAIN_ICONS: Record<EventDomain, string> = {
   earthquake:    '⊕',
   wildfire:      '▲',
+  hurricane:     '🌀',
+  tornado:       '🌪',
   storm:         '\u25C9', // fisheye
   flood:         '≋',
   volcano:       '△',
@@ -31,19 +35,29 @@ export const DOMAIN_ICONS: Record<EventDomain, string> = {
   space_weather: '✦',
 };
 
-/** Fixed weighting used by the Global Anomaly Index (sums to 100). */
+/**
+ * Fixed weighting used by the Global Anomaly Index (sums to 100).
+ *
+ * Rebalanced when `hurricane` and `tornado` joined the roster: the tropical
+ * cyclone share is carved out of `storm` (which now counts non-tropical severe
+ * weather only) and the two new domains are funded proportionally from the
+ * previous weights, keeping the relative ranking of the original seven.
+ */
 export const DOMAIN_WEIGHTS: Record<EventDomain, number> = {
-  earthquake:    20,
-  wildfire:      15,
-  storm:         18,
-  flood:         15,
-  volcano:        7,
+  earthquake:    18,
+  wildfire:      12,
+  hurricane:     15,
+  tornado:       10,
+  storm:         10,
+  flood:         12,
+  volcano:        6,
   ice:            5,
-  space_weather: 20,
+  space_weather: 12,
 };
 
 export const DOMAIN_ORDER: EventDomain[] = [
-  'earthquake', 'wildfire', 'storm', 'flood', 'volcano', 'ice', 'space_weather',
+  'earthquake', 'wildfire', 'hurricane', 'tornado', 'storm',
+  'flood', 'volcano', 'ice', 'space_weather',
 ];
 
 const FALLBACK_COLOR = '#94a3b8';
@@ -97,6 +111,9 @@ export function prioritySeverity(priority: Priority): SeverityKey {
  * Coarse 1–5 severity proxy for a canonical event.
  * NOAA scales only exist for space weather, so geophysical events are ranked
  * from magnitude where that is meaningful, otherwise from priority/alert level.
+ *
+ * Tropical cyclones are ranked from their maximum sustained wind
+ * (Saffir–Simpson) and tornado reports from the EF rating they carry.
  */
 export function eventSeverity(ev: CanonicalEvent): number {
   if (ev.domain === 'earthquake' && ev.magnitude > 0) {
@@ -105,6 +122,21 @@ export function eventSeverity(ev: CanonicalEvent): number {
     if (ev.magnitude >= 5) return 3;
     if (ev.magnitude >= 4) return 2;
     return 1;
+  }
+
+  if (ev.domain === 'hurricane' && typeof ev.extra?.intensityKph === 'number') {
+    const kph = ev.extra.intensityKph;
+    if (kph >= 252) return 5; // Category 5
+    if (kph >= 178) return 4; // Category 3–4
+    if (kph >= 119) return 3; // Category 1–2
+    if (kph >= 63)  return 2; // Tropical storm
+    return 1;                 // Tropical depression
+  }
+
+  if (ev.domain === 'tornado') {
+    const ef = /^EF?([0-5])$/.exec((ev.extra?.scale ?? '').toUpperCase());
+    if (ef) return Math.min(5, 2 + Number(ef[1])); // EF0 → 2 … EF3+ → 5
+    return 2;
   }
 
   const sev = prioritySeverity(ev.priority);
