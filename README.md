@@ -66,6 +66,7 @@ anna-earth-observer/
     +-- App.tsx                 # Root router
     +-- routes.tsx              # Route definitions
     +-- index.css               # Global styles and design tokens
+    +-- assets/                 # Bundled media (earth-loop.mp4 — the hero globe)
     +-- components/
     |   +-- common/             # Shared utility components (SkipLink, PageMeta)
     |   +-- observatory/        # Dashboard-specific components
@@ -79,7 +80,7 @@ anna-earth-observer/
     |   |   +-- AnomalyDetailDialog.tsx # Per-event / per-episode detail dialog
     |   |   +-- GAIExplanationModal.tsx # Index methodology explainer
     |   |   +-- ObservatoryOffline.tsx  # All-sources-down state
-    |   |   +-- EarthBackground.tsx     # Parallax Earth video layer
+    |   |   +-- EarthBackground.tsx     # Rotating-earth parallax layer (bundled clip)
     |   +-- ui/                 # shadcn/ui component library
     +-- hooks/                  # Custom React hooks
     +-- i18n/                   # Internationalisation (en / fr / es)
@@ -280,3 +281,46 @@ Two host constraints shape `src/anna-runtime.ts`:
 
 Tool calls use the SDK's single-object RPC shape — `tools.invoke({ tool_id, method, args })` — not
 positional arguments, matching `describe`'s schema in the host method table.
+
+### Bundle Assets and the Host CSP
+
+The host serves every app bundle under a **fixed** Content Security Policy, and that policy — not the
+`vite dev` server, which sends no CSP at all — decides which visuals survive. Two rules matter:
+
+- **`media-src 'self' blob:` and `font-src 'self' data:` are not widened by `external_origins`.**
+  `ui.bundle.external_origins` feeds `connect-src` / `img-src` / `script-src` / `style-src` (which is
+  why the Leaflet basemaps work), but an off-origin `<video>` or `@font-face` is blocked before the
+  request leaves the iframe. The failure is invisible in the DOM: no element disappears, no error is
+  thrown, and the only signal is a console message — which is exactly how the hero's rotating earth
+  went missing in the store build while rendering fine locally. `ui.csp_overrides` can widen any of
+  the six directives (`connect-src`, `img-src`, `media-src`, `font-src`, `style-src`, `script-src`)
+  when an asset genuinely cannot be vendored. Vendoring is what this app does: the earth clip
+  (`src/assets/earth-loop.mp4`, re-encoded from 7.9 MB to ~380 KB) ships inside the bundle so it
+  resolves to `'self'`, and the MiSans `@font-face` blocks were deleted rather than vendored — their
+  objects 404 on the CDN, so the UI has always rendered with the fallback stack in
+  `--font-family-sans`.
+- **Vendored files keep whatever MIME type the CLI guessed.** `CONTENT_TYPES` in `@anna-ai/cli`
+  covers html/css/js/json/images/fonts and nothing else — an `.mp4` is stored and served as
+  `application/octet-stream`, which Chromium *may* refuse to demux (and the `type` attribute on a
+  `<source>` is only a candidate hint, so it cannot rescue the load). `EarthBackground` therefore
+  loads in two steps: the direct `<video src>` first, then — if that errors — the same bytes re-read
+  with `fetch` and handed to the element as a `Blob` typed `video/mp4`, which `media-src blob:`
+  allows. Only if both routes fail is the layer dropped, so the hero degrades to its copy rather than
+  an empty box.
+
+The committed clip is a 5 s loop re-encoded from the 1664×1244 / 12.6 Mbps source; regenerate it with
+
+```bash
+ffmpeg -i source.mp4 -an -vf scale=1248:-2 -c:v libx264 -preset slow -crf 31 \
+  -profile:v main -pix_fmt yuv420p -movflags +faststart src/assets/earth-loop.mp4
+```
+
+(7.9 MB → ~387 KB; the globe is masked, dimmed and scaled to half size on screen, so the difference
+is invisible there.)
+
+
+The published `manifest.json` now lists only the origins the app really calls. Three entries went with this
+change: `resource-static.bj.bcebos.com` (the dead MiSans `@font-face` source, whose objects 404), the
+CloudFront bucket that hosted the earth clip, and an unused `cdnjs.cloudflare.com` entry — none of them
+appear anywhere in the built bundle (`bundle/assets`).
+
