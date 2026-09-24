@@ -2,37 +2,17 @@
 @import "tailwindcss/components";
 @import "tailwindcss/utilities";
 
-@font-face {
-  font-family: 'MiSans';
-  src: url('https://resource-static.bj.bcebos.com/fonts-skill/MiSans-Regular.woff2') format('woff2');
-  font-weight: 400;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'MiSans';
-  src: url('https://resource-static.bj.bcebos.com/fonts-skill/MiSans-Medium.woff2') format('woff2');
-  font-weight: 500;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'MiSans';
-  src: url('https://resource-static.bj.bcebos.com/fonts-skill/MiSans-SemiBold.woff2') format('woff2');
-  font-weight: 600;
-  font-style: normal;
-  font-display: swap;
-}
-
-@font-face {
-  font-family: 'MiSans';
-  src: url('https://resource-static.bj.bcebos.com/fonts-skill/MiSans-Bold.woff2') format('woff2');
-  font-weight: 700;
-  font-style: normal;
-  font-display: swap;
-}
+/*
+ * No `@font-face` here on purpose.
+ *
+ * The MiSans faces used to be pulled from
+ * `resource-static.bj.bcebos.com/fonts-skill/…`. Those objects 404, and the
+ * Anna host serves bundles under `font-src 'self' data:`, so the declarations
+ * could only ever produce a blocked request plus a console error — the UI has
+ * always rendered with the fallback stack below. `--font-family-sans` keeps
+ * MiSans first so an installed copy still wins, and every weight falls through
+ * to the platform UI font otherwise.
+ */
 
 :root {
   /* ── Observatory surfaces ─────────────────────────────────────────────── */
