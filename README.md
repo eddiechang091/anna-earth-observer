@@ -1,6 +1,6 @@
 # Earth Anomaly Observatory
 
-A real-time Earth anomaly monitoring dashboard built with React, TypeScript, Vite, and Leaflet. The interface integrates data from four authoritative Earth science APIs (USGS, NASA EONET, NOAA SWPC, UN GDACS) and uses AI/LLM analysis to generate scientific assessments across a trilingual (English / French / Spanish) UI.
+A real-time Earth anomaly monitoring dashboard built with React, TypeScript, Vite, and Leaflet. The interface integrates data from eight authoritative Earth science APIs (USGS, NASA EONET, NOAA SWPC, UN GDACS, NOAA NHC, NOAA NWS, NOAA SPC, wheretheiss.at) and uses AI/LLM analysis to generate scientific assessments across a trilingual (English / French / Spanish) UI.
 
 ---
 
@@ -21,12 +21,12 @@ A real-time Earth anomaly monitoring dashboard built with React, TypeScript, Vit
 
 The observatory dashboard provides operators with:
 
-- **Interactive World Map** - real-time event visualization using Leaflet + OpenStreetMap tiles with color-coded markers by anomaly domain (earthquake, wildfire, storm, flood, volcano, ice, space weather), zoom/pan controls, and event detail popups
+- **Interactive World Map** - real-time event visualization using Leaflet + OpenStreetMap tiles with color-coded markers by anomaly domain (earthquake, wildfire, hurricane, tornado, storm, flood, volcano, ice, space weather), zoom/pan controls, and event detail popups
 - **Canonical Event Aggregation** - intelligent deduplication of duplicate reports from multiple data sources into single authoritative event records
 - **Domain-Based Anomaly Scores** - per-domain risk scoring (0–100) with historical baseline comparisons and trend indicators
-- **Global Anomaly Index** - composite risk gauge combining weighted anomaly scores across seven domains
+- **Global Anomaly Index** - composite risk gauge combining weighted anomaly scores across nine domains
 - **AI-Driven Assessment** - LLM-powered scientific analysis identifying key developments, cross-domain correlations, data quality warnings, and analytical priorities
-- **Real-Time Data Feeds** - automated parallel ingestion from USGS (earthquakes), NASA EONET (wildfires, storms, floods, ice), NOAA SWPC (geomagnetic storms, solar radiation), and UN GDACS (flood/volcano events)
+- **Real-Time Data Feeds** - automated parallel ingestion from USGS (earthquakes), NASA EONET (wildfires, storms, floods, ice), NOAA SWPC (geomagnetic storms, solar radiation), UN GDACS (flood/volcano/tsunamis/cyclone alerts), NOAA NHC (active tropical cyclones), NOAA NWS (tornado warnings/watches), and NOAA SPC (daily tornado reports)
 
 The UI supports English, French (Canadian), and Spanish with live language switching and persistent preferences.
 
@@ -139,7 +139,7 @@ Create a .env.local file in the project root (optional):
 VITE_SENTRY_DSN=https://<key>@sentry.io/<project>
 ```
 
-**Note:** Earth data is fetched directly from public APIs (USGS, NASA EONET, NOAA SWPC, UN GDACS) with no authentication required. AI assessment is provided by the Anna Runtime environment when running inside the Anna host, or disabled in standalone mode.
+**Note:** Earth data is fetched directly from public APIs (USGS, NASA EONET, NOAA SWPC, UN GDACS, NOAA NHC, NOAA NWS, NOAA SPC) with no authentication required. AI assessment is provided by the Anna Runtime environment when running inside the Anna host, or disabled in standalone mode.
 
 All runtime environment variables must be prefixed with VITE_ to be exposed to the browser bundle.
 
@@ -158,13 +158,17 @@ All runtime environment variables must be prefixed with VITE_ to be exposed to t
 
 ### Data Pipeline
 
-**Real-Time Data Ingestion** - The `useEarthData` hook executes parallel fetches from four authoritative sources:
+**Real-Time Data Ingestion** - The `useEarthData` hook executes parallel fetches from seven authoritative sources:
 - **USGS** (earthquake.usgs.gov): Earthquakes M≥4.5 from the past 7 days
 - **NASA EONET** (eonet.gsfc.nasa.gov): Wildfires, storms, floods, volcanoes, and ice events (14-day window)
 - **NOAA SWPC** (services.swpc.noaa.gov): Geomagnetic storms, solar radiation events, and solar flares
-- **UN GDACS** (gdacs.org): Disaster alerts for floods and volcanoes
+- **UN GDACS** (gdacs.org): Disaster alerts for floods, volcanoes, tsunamis and tropical cyclones
+- **NOAA NHC** (nhc.noaa.gov): Active tropical cyclones worldwide (Saffir-Simpson intensity); merged with
+  GDACS/EONET cyclone records so each storm is counted once in the `hurricane` domain
+- **NOAA NWS** (api.weather.gov): Active tornado warnings and watches (US)
+- **NOAA SPC** (spc.noaa.gov): Today's tornado storm reports (US, EF rating when confirmed)
 
-All four requests run in parallel using `Promise.allSettled()` to maximize responsiveness even if one source is temporarily unavailable.
+All requests run in parallel using `Promise.allSettled()` to maximize responsiveness even if one source is temporarily unavailable.
 
 ### Canonical Event Model
 
@@ -180,8 +184,8 @@ Raw API responses are normalized into a canonical data model:
 - **Severity Proxy** - Maximum magnitude/scale observed in that domain
 - **Temporal Trend** - Rising, stable, or falling activity pattern
 
-**Global Anomaly Index** combines seven domain scores using fixed weights:
-- Earthquake (20%), Wildfire (15%), Storm (18%), Flood (15%), Volcano (7%), Ice (5%), Space Weather (20%)
+**Global Anomaly Index** combines nine domain scores using fixed weights:
+- Earthquake (18%), Hurricane (15%), Wildfire (12%), Flood (12%), Space Weather (12%), Tornado (10%), Storm (10%), Volcano (6%), Ice (5%)
 
 ### AI/LLM Assessment Layer
 

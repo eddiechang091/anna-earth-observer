@@ -13,9 +13,12 @@ interface DomainStatusStripProps {
 /**
  * Per-domain risk cards.
  *
- * Adds the 0–100 anomaly score (the app's primary metric, previously not shown
- * here at all), a score meter, and an always-visible domain accent rail. The
- * alert band is encoded with a colour *and* a dot so it is not colour-only.
+ * Each card shows the *event count* (the headline number), the alert band and
+ * the 0–100 anomaly score as a meter. The raw score digits that used to sit at
+ * the end of the meter were removed: with nothing labelling them they read as a
+ * second event count ("103 earthquakes… and 100?"). The exact value is still
+ * available — it is the meter's fill, the card's tooltip and the accessible
+ * name — but the tile no longer prints an unexplained number.
  */
 export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
   domainScores,
@@ -65,7 +68,7 @@ export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
             onClick={() => onToggleDomain(active ? null : domain)}
             aria-pressed={active}
             aria-label={`${name}: ${ds.eventCount} ${t('dashboard.eventCountPl')}, ${t('domain.score')} ${ds.score}/100, ${bandLabel}`}
-            title={ds.mainDriver}
+            title={`${t('domain.score')} ${ds.score}/100 — ${ds.mainDriver}`}
           >
             <span className="domain-card__head">
               <span className="domain-card__icon" style={{ color }} aria-hidden="true">
@@ -84,7 +87,6 @@ export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
               <span className="domain-card__meter" aria-hidden="true">
                 <span style={{ width: `${Math.min(Math.max(ds.score, 0), 100)}%` }} />
               </span>
-              <span className="domain-card__score">{ds.score}</span>
             </span>
           </button>
         );

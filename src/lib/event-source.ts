@@ -39,6 +39,9 @@ export const SOURCE_PORTALS: Record<EventSource, { label: string; url: string }>
   swpc: { label: 'NOAA Space Weather Prediction Center', url: 'https://www.swpc.noaa.gov/' },
   gdacs: { label: 'UN GDACS — Global Disaster Alert System', url: 'https://www.gdacs.org/' },
   celestrak: { label: 'CelesTrak', url: 'https://celestrak.org/' },
+  nhc: { label: 'NOAA National Hurricane Center', url: 'https://www.nhc.noaa.gov/' },
+  nws: { label: 'NOAA National Weather Service alerts', url: 'https://www.weather.gov/' },
+  spc: { label: 'NOAA Storm Prediction Center reports', url: 'https://www.spc.noaa.gov/climo/reports/' },
 };
 
 /**

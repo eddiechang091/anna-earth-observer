@@ -50,6 +50,9 @@ function buildUserMessage(data: CanonicalDataResult): string {
       ageHours: Math.round(e.ageHours),
       ...(e.depth !== undefined ? { depth_km: e.depth } : {}),
       ...(e.extra?.scale ? { scale: e.extra.scale } : {}),
+      ...(typeof e.extra?.intensityKph === 'number' && e.extra.intensityKph > 0
+        ? { wind_kph: e.extra.intensityKph }
+        : {}),
     }));
 
   const episodes = data.spaceWeatherEpisodes.map(ep => ({

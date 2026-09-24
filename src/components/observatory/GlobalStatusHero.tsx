@@ -9,7 +9,7 @@ type SourceKey = 'anna' | 'direct' | 'offline';
 const SOURCE_META: Record<SourceKey, { labelKey: string; color: string }> = {
   anna:    { labelKey: 'dashboard.live_anna',   color: 'var(--accent-green)' },
   direct:  { labelKey: 'dashboard.live_direct', color: 'var(--accent-cyan)' },
-  offline: { labelKey: 'dashboard.demoData',    color: 'var(--accent-orange)' },
+  offline: { labelKey: 'dashboard.offline',    color: 'var(--accent-orange)' },
 };
 
 interface GlobalStatusHeroProps {
@@ -90,17 +90,29 @@ export const GlobalStatusHero: React.FC<GlobalStatusHeroProps> = ({
         style={{ filter: blur > 0 ? `blur(${blur}px)` : undefined, opacity }}
       >
         <div className="hero-left">
-          <div className="hero-eyebrow">
-            <span
-              className="hero-source-dot"
-              style={{
-                background: src.color,
-                animation: dataSource !== 'offline' ? 'pulse-dot 2s ease-in-out infinite' : 'none',
-              }}
-            />
-            <span style={{ color: src.color, fontSize: 'var(--fs-micro)', fontWeight: 600, letterSpacing: '0.06em' }}>
-              {t(src.labelKey)}
-            </span>
+          {/* While the first fetch is in flight the source label is unknown —
+              printing "Demo Data" there (which the offline default used to do)
+              told the viewer something the app could not back yet. */}
+          <div className="hero-eyebrow" aria-hidden={loading || undefined}>
+            {loading ? (
+              <>
+                <span className="skeleton skeleton--dot-sm" />
+                <span className="skeleton skeleton--text" style={{ width: '124px' }} />
+              </>
+            ) : (
+              <>
+                <span
+                  className="hero-source-dot"
+                  style={{
+                    background: src.color,
+                    animation: dataSource !== 'offline' ? 'pulse-dot 2s ease-in-out infinite' : 'none',
+                  }}
+                />
+                <span style={{ color: src.color, fontSize: 'var(--fs-micro)', fontWeight: 600, letterSpacing: '0.06em' }}>
+                  {t(src.labelKey)}
+                </span>
+              </>
+            )}
           </div>
           <h1 className="hero-title">{t('dashboard.title')}</h1>
           <p className="hero-subtitle">
@@ -124,7 +136,7 @@ export const GlobalStatusHero: React.FC<GlobalStatusHeroProps> = ({
             type="button"
             className="gai-block"
             onClick={() => setShowExplanation(true)}
-            aria-label={t('aria.gai', { score: scoreText, level: bandLabel })}
+            aria-label={loading ? t('topbar.loading') : t('aria.gai', { score: scoreText, level: bandLabel })}
             title={t('dashboard.clickToLearn')}
           >
             <span className="gauge-wrap">
@@ -136,10 +148,22 @@ export const GlobalStatusHero: React.FC<GlobalStatusHeroProps> = ({
             </span>
             <span className="gai-status">
               <span className="gai-caption">{t('dashboard.globalAnomalyIndex')}</span>
-              <span className="gai-status__level" style={{ color: level.color }}>
-                {bandLabel}
-              </span>
-              <span className="gai-status__desc">{t(`gai.desc.${level.key}`)}</span>
+              {/* The band label and its description are only meaningful once a
+                  score exists: `gaiLevel(null)` would otherwise render the
+                  reassuring "Normal" band over data that has not arrived. */}
+              {loading ? (
+                <>
+                  <span className="skeleton gai-status__placeholder" style={{ width: '96px' }} />
+                  <span className="skeleton gai-status__placeholder" style={{ width: '156px' }} />
+                </>
+              ) : (
+                <>
+                  <span className="gai-status__level" style={{ color: level.color }}>
+                    {bandLabel}
+                  </span>
+                  <span className="gai-status__desc">{t(`gai.desc.${level.key}`)}</span>
+                </>
+              )}
             </span>
           </button>
         </div>
