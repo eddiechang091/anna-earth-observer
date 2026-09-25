@@ -52,7 +52,9 @@ const FeedSkeletons: React.FC = () => (
 interface EventRowProps {
   event: CanonicalEvent;
   selected: boolean;
+  /** Highlights this event's map marker. */
   onSelect: () => void;
+  /** Opens the shared detail dialog for this event. */
   onOpen: () => void;
 }
 
@@ -64,17 +66,30 @@ const EventRow: React.FC<EventRowProps> = ({ event, selected, onSelect, onOpen }
   const severityLabel = t(SEVERITY_LABEL_KEY[event.priority] ?? 'dashboard.minor');
   const category = t(`dashboard.domains.${event.domain}`);
 
+  // Single activation path for pointer and keyboard: the row highlights its
+  // marker *and* opens the detail dialog, exactly like a map marker click. It
+  // previously only highlighted, so most list items appeared to do nothing.
+  const activate = () => {
+    onSelect();
+    onOpen();
+  };
+
   return (
     <div
       className={`feed-item${selected ? ' feed-item--selected' : ''}`}
       style={{ '--item-color': color } as React.CSSProperties}
-      onClick={onSelect}
+      onClick={activate}
       role="button"
       tabIndex={0}
       aria-pressed={selected}
+      aria-haspopup="dialog"
       aria-label={`${event.name}. ${category}, ${event.region}, ${event.ageText}. ${t('aria.severity', { level: severityLabel })}`}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onOpen();
+        // Enter and Space both open the detail dialog, matching the pointer.
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          activate();
+        }
       }}
       title={event.name}
     >
@@ -125,9 +140,13 @@ const SpaceWeatherRow: React.FC<SpaceRowProps> = ({ episode, onOpen }) => {
       onClick={onOpen}
       role="button"
       tabIndex={0}
+      aria-haspopup="dialog"
       aria-label={`${name}. ${t('aria.severity', { level: severity.label })}. ${episode.ageText}`}
       onKeyDown={(e) => {
-        if (e.key === 'Enter') onOpen();
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
       }}
       title={episode.phenomenonLabel}
     >
@@ -286,7 +305,10 @@ export const EventFeed: React.FC<EventFeedProps> = ({
                 key={ev.id}
                 event={ev}
                 selected={isSelected}
-                onSelect={() => onSelectEvent(isSelected ? '' : ev.id)}
+                // Selecting is no longer a toggle: the click both highlights the
+                // marker and opens the dialog, so clearing the highlight first
+                // would fight the open.
+                onSelect={() => onSelectEvent(ev.id)}
                 onOpen={() => onOpenDetail(ev)}
               />
             );
