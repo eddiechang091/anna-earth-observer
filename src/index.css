@@ -691,7 +691,6 @@ body {
 @keyframes skeleton-sweep { 0% { background-position: 100% 0; } 100% { background-position: -100% 0; } }
 .skeleton--text { height: 11px; width: 100%; }
 .skeleton--title { height: 14px; width: 60%; }
-.skeleton--score { height: 20px; width: 46px; }
 .skeleton--gauge { width: 132px; height: 132px; border-radius: 50%; }
 .skeleton--dot { width: 20px; height: 20px; border-radius: 50%; }
 /* 6px matches the small live-source dots in the hero eyebrow. */
@@ -745,24 +744,20 @@ body {
 .domain-card--loading { cursor: default; pointer-events: none; }
 
 .domain-card__head { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: var(--space-1); }
-.domain-card__icon { font-size: 15px; line-height: 1; }
-.domain-card__trend { font-size: var(--fs-small); font-weight: 700; line-height: 1; }
-/* 9px uppercase labels were below a readable floor at 100% zoom. */
-.domain-card__name { font-size: var(--fs-label); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
-.domain-card__count { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1; display: block; }
-/* The band dot repeats the colour as a shape, so the state survives
-   red/green colour blindness. */
-.domain-card__label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.02em; }
-.domain-card__label::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink: 0; }
-
-/* Score meter — the 0–100 anomaly score is the app's primary metric. Only the
-   meter encodes it on the tile: the raw digits used to be printed after the bar,
-   where nothing labelled them and they read as a second event count. The exact
-   value lives in the card's title tooltip and accessible name. */
-.domain-card__foot { display: flex; align-items: center; gap: var(--space-2); width: 100%; margin-top: 2px; }
-.domain-card__meter { flex: 1; height: 4px; border-radius: 999px; background: rgba(255,255,255,0.09); overflow: hidden; }
-.domain-card__meter span { display: block; height: 100%; border-radius: 999px; background: var(--alert-color, var(--domain-color)); transition: width 600ms cubic-bezier(0.16,1,0.3,1); }
-
+.domain-card__icon { font-size: 17px; line-height: 1; }
+.domain-card__trend { font-size: 13px; font-weight: 700; line-height: 1; }
+/* 9px uppercase labels were below a readable floor at 100% zoom. The event count
+   and the word naming it are the only text left on the card now that the score
+   row, its meter and the confidence line are gone, so both are sized up to fill
+   the space those rows used to take. */
+.domain-card__name { font-size: var(--fs-small); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); }
+.domain-card__count { font-size: 30px; font-weight: 700; letter-spacing: -0.02em; color: var(--text-primary); font-variant-numeric: tabular-nums; line-height: 1; display: block; }
+/* The word for what the figure counts ("events", " événements", "eventos"), so the
+   big number is never left as an unexplained digit. Held at the 11px label token:
+   at 12px the French "ÉVÉNEMENTS" is wider than a 116px-wide card's 90px content
+   box, and the card is overflow:hidden, so the last letter would be clipped
+   rather than wrapped. */
+.domain-card__unit { font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-muted); overflow-wrap: break-word; max-width: 100%; }
 /* Map + feed row */
 .map-feed-row {
   display: grid;
