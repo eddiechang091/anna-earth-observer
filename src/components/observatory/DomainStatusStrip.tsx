@@ -1,7 +1,7 @@
 import React from 'react';
 import type { DomainScore, EventDomain } from '@/types/earth-data';
 import { useLanguage } from '@/i18n/LanguageContext';
-import { DOMAIN_ORDER, TREND_GLYPH, domainColor, domainIcon, scoreBand } from '@/lib/domain-theme';
+import { DOMAIN_ORDER, TREND_GLYPH, domainColor, domainIcon } from '@/lib/domain-theme';
 
 interface DomainStatusStripProps {
   domainScores: DomainScore[];
@@ -11,14 +11,20 @@ interface DomainStatusStripProps {
 }
 
 /**
- * Per-domain risk cards.
+ * Per-domain activity cards.
  *
- * Each card shows the *event count* (the headline number), the alert band and
- * the 0–100 anomaly score as a meter. The raw score digits that used to sit at
- * the end of the meter were removed: with nothing labelling them they read as a
- * second event count ("103 earthquakes… and 100?"). The exact value is still
- * available — it is the meter's fill, the card's tooltip and the accessible
- * name — but the tile no longer prints an unexplained number.
+ * A card states two facts and nothing else: which domain it is, and how many
+ * events it holds.
+ *
+ * Every derived figure that used to sit here has been removed. The alert band
+ * word ("Normal" … "Critical"), the 0–100 "anomaly score" with its meter, and
+ * the "confidence %" were all functions of the event *count* (confidence of a
+ * fixed per-domain constant), which dressed a count up as a measurement: a
+ * domain holding 96 moderate earthquakes (M4.5–5.2) read as "Critical", score
+ * 58, confidence 80%, while a domain with no baseline at all showed an equally
+ * confident-looking 0. None of those numbers had a published scale anyone could
+ * check, so the card reports the count plainly and the words and figures that
+ * remain are sized up to fill the space they left.
  */
 export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
   domainScores,
@@ -39,10 +45,7 @@ export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
               <span className="skeleton skeleton--dot" />
             </span>
             <span className="skeleton skeleton--text" style={{ width: '68%' }} />
-            <span className="skeleton skeleton--score" />
-            <span className="domain-card__foot">
-              <span className="skeleton skeleton--text" />
-            </span>
+            <span className="skeleton skeleton--chip" style={{ width: '84px' }} />
           </div>
         ))}
       </div>
@@ -54,21 +57,23 @@ export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
       {domainScores.map((ds) => {
         const domain = ds.domain as EventDomain;
         const color = domainColor(domain);
-        const band = scoreBand(ds.score);
         const active = activeDomain === domain;
         const name = t(`dashboard.domains.${domain}`);
-        const bandLabel = t(`dashboard.alerts.${band.key}`);
+        // The count is the only figure on the card, so it carries its own word —
+        // "96 events", "1 event" — from the reader's language and in the right
+        // number.
+        const unit = t(ds.eventCount === 1 ? 'dashboard.eventCount' : 'dashboard.eventCountPl');
 
         return (
           <button
             key={domain}
             type="button"
             className={`domain-card${active ? ' domain-card--active' : ''}`}
-            style={{ '--domain-color': color, '--alert-color': band.color } as React.CSSProperties}
+            style={{ '--domain-color': color } as React.CSSProperties}
             onClick={() => onToggleDomain(active ? null : domain)}
             aria-pressed={active}
-            aria-label={`${name}: ${ds.eventCount} ${t('dashboard.eventCountPl')}, ${t('domain.score')} ${ds.score}/100, ${bandLabel}`}
-            title={`${t('domain.score')} ${ds.score}/100 — ${ds.mainDriver}`}
+            aria-label={`${name}: ${ds.eventCount} ${unit}`}
+            title={ds.mainDriver}
           >
             <span className="domain-card__head">
               <span className="domain-card__icon" style={{ color }} aria-hidden="true">
@@ -80,14 +85,7 @@ export const DomainStatusStrip: React.FC<DomainStatusStripProps> = ({
             </span>
             <span className="domain-card__name">{name}</span>
             <strong className="domain-card__count">{ds.eventCount}</strong>
-            <span className="domain-card__label" style={{ color: band.color }}>
-              {bandLabel}
-            </span>
-            <span className="domain-card__foot">
-              <span className="domain-card__meter" aria-hidden="true">
-                <span style={{ width: `${Math.min(Math.max(ds.score, 0), 100)}%` }} />
-              </span>
-            </span>
+            <span className="domain-card__unit">{unit}</span>
           </button>
         );
       })}
