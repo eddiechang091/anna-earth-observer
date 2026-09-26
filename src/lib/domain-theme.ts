@@ -206,15 +206,6 @@ export function gaiLevel(score: number | null): GaiLevel {
   return fallback;
 }
 
-/** Domain score → alert band (used by the domain strip). */
-export function scoreBand(score: number): { key: string; color: string } {
-  if (score <= 10) return { key: 'normal',       color: '#36d66d' };
-  if (score <= 30) return { key: 'elevated',     color: '#f8e178' };
-  if (score <= 55) return { key: 'highActivity', color: '#ffae25' };
-  if (score <= 75) return { key: 'veryHigh',     color: '#f97316' };
-  return { key: 'critical', color: '#ef4444' };
-}
-
 export const TREND_GLYPH: Record<'rising' | 'stable' | 'falling', string> = {
   rising:  '\u2191',
   stable:  '\u2192',
